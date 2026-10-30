@@ -2,7 +2,7 @@
 
 > **Đồ án môn PRM393 — Ứng dụng Di động Đa Nền tảng**  
 > Kiến trúc: **Flutter Mobile (Frontend)** + **Java Spring Boot 3 (REST API Backend)** + **SQLite Database (WAL Mode)**  
-> Quy mô: **3 Roles**, **5 Luồng nghiệp vụ**, **29 Màn hình (`S01` -> `S29`)**, **6 Module kỹ thuật bắt buộc** và **21 sân cầu lông thực tế quanh Làng Đại Học Quốc Gia TP.HCM**.
+> Quy mô: **3 Roles**, **5 Luồng nghiệp vụ**, **30 Màn hình (`S01` -> `S30`)**, **6 Module kỹ thuật bắt buộc** và **21 sân cầu lông thực tế quanh Làng Đại Học Quốc Gia TP.HCM**.
 
 ---
 
@@ -13,7 +13,7 @@
 4. [Tài Khoản Demo & Phân Quyền (3 Roles)](#4-tài-khoản-demo--phân-quyền-3-roles)
 5. [Dữ Liệu Demo: 21 Sân Cầu Lông Quanh Làng Đại Học (NVHSV)](#5-dữ-liệu-demo-21-sân-cầu-lông-quanh-làng-đại-học-nvhsv)
 6. [Kịch Bản 6 Module Kỹ Thuật (Checklist PRM393)](#6-kịch-bản-6-module-kỹ-thuật-checklist-prm393)
-7. [Bản Đồ 29 Màn Hình (`S01` -> `S29`) & 5 Luồng Nghiệp Vụ](#7-bản-đồ-29-màn-hình-s01---s29--5-luồng-nghiệp-vụ)
+7. [Bản Đồ 30 Màn Hình (`S01` -> `S30`) & 5 Luồng Nghiệp Vụ](#7-bản-đồ-30-màn-hình-s01---s30--5-luồng-nghiệp-vụ)
 8. [Kiểm Thử & Đảm Bảo Chất Lượng (Quality Assurance)](#8-kiểm-thử--đảm-bảo-chất-lượng-quality-assurance)
 
 ---
@@ -25,6 +25,7 @@
 - **Responsive & Adaptive Layout**: Hỗ trợ toàn diện từ điện thoại nhỏ (360x640), màn hình ngang (landscape), tablet (800x1280) đến desktop (≥1024px). Chuyển đổi tự động `BottomNavigationBar` (Mobile) sang `NavigationRail` (Tablet/Desktop).
 - **Bản đồ**: `flutter_map` (OpenStreetMap / Leaflet) + `latlong2`, định vị GPS, vẽ lộ trình và tính khoảng cách theo công thức Haversine.
 - **Thanh toán & Mã vạch**: `qr_flutter` tạo và quét mã VietQR PayOS / QR Check-in vé.
+- **Đa phương tiện & Video**: `video_player` phát video trình độ nhóm đánh đa nền tảng (Mobile/Web), `image_picker` cho phép quay video trực tiếp từ camera hoặc tải từ thư viện thiết bị.
 - **State Management**: Reactive `AppState` (`ChangeNotifier`) kết nối REST API Spring Boot và tự động đồng bộ thời gian thực.
 
 ### Backend REST API (Java Spring Boot)
@@ -63,28 +64,31 @@ d:\badminton_v2\
 │
 └── mobile\                             # Flutter Mobile App
     ├── .gitignore                      # Chặn build/, .dart_tool/, android/.gradle, local.properties
-    ├── pubspec.yaml                    # flutter_map, latlong2, qr_flutter, http, intl...
+    ├── pubspec.yaml                    # flutter_map, latlong2, qr_flutter, http, intl, video_player, image_picker...
     ├── test\
-    │   └── widget_test.dart            # Bộ test Responsive 29 màn hình trên 4 kích thước (360x640, 640x360, 800x1280, 1280x800)
+    │   └── widget_test.dart            # Bộ test Responsive 30 màn hình trên 4 kích thước (360x640, 640x360, 800x1280, 1280x800)
     └── lib\
         ├── main.dart                   # Điểm khởi chạy app & thiết lập MaterialApp
         ├── app\                        # Shell ứng dụng & điều hướng trung tâm
         │   ├── app_shell.dart          # Khung Scaffold, AppBar, Adaptive NavRail/BottomBar
         │   ├── app_navigation.dart     # Điều hướng theo vai trò (Customer / Owner / Admin)
-        │   ├── app_drawer.dart         # Menu Drawer chuyển nhanh 29 screens khi demo PRM393
+        │   ├── app_drawer.dart         # Menu Drawer chuyển nhanh 30 screens khi demo PRM393
         │   ├── app_theme.dart          # Material 3 Theme (Emerald #059669, typography Barlow)
-        │   └── screen_registry.dart    # Ánh xạ mã S01-S29 sang widget tương ứng
+        │   └── screen_registry.dart    # Ánh xạ mã S01-S30 sang widget tương ứng
         ├── core\                       # Tiện ích dùng chung & State
         │   ├── api_service.dart        # HTTP Client tự động nhận diện IP Android/Web/Desktop
         │   ├── app_state.dart          # State trung tâm 3 vai trò, đồng bộ với Spring Boot API
+        │   ├── match_video.dart        # Quy tắc giới hạn video (≤60s, ≤50MB) & trình phát video MatchVideoPlayer
+        │   ├── video_source_io.dart    # Video adapter cho Mobile/Desktop (IO)
+        │   ├── video_source_web.dart   # Video adapter cho Web (JS Interop)
         │   ├── responsive.dart         # Hệ thống Breakpoints, LayoutBuilder & ResponsiveCenter
         │   ├── ui_kit.dart             # StatusBadge, BottomActionBar, InfoPill, UiFmt, UiDate
         │   └── booking_rules.dart      # Quy tắc nghiệp vụ giữ chỗ, đổi lịch & hoàn tiền
-        └── screens\                    # 29 Màn hình được phân cụm chuyên biệt
+        └── screens\                    # 30 Màn hình được phân cụm chuyên biệt
             ├── screens.dart            # Export tập trung toàn bộ màn hình
             ├── auth\                   # S01 (Login), S02 (Register), S03 (OTP), S04 (Forgot PW)
             ├── shared\                 # S05 (Trung tâm thông báo thời gian thực)
-            ├── customer\               # S06 -> S18, S27, S28, S29 (Khách hàng: Tìm sân, Map, Đặt sân, VietQR, Ví, Kèo, AI, Rút tiền, Đánh giá, Sửa hồ sơ)
+            ├── customer\               # S06 -> S18, S27 -> S30 (Khách hàng: Tìm sân, Map, Đặt sân, VietQR, Ví, Kèo, Video, AI, Rút tiền, Đánh giá, Sửa hồ sơ)
             ├── owner\                  # S19 -> S23 (Chủ sân: Dashboard, Ghim Map, Lịch biểu, Quét QR, Payout)
             └── admin\                  # S24 -> S26 (Quản trị: Dashboard, Kiểm duyệt sân, Đối soát giải ngân)
 ```
@@ -132,7 +136,7 @@ Hệ thống cấu hình sẵn 3 tài khoản đại diện cho 3 phân quyền.
 
 > 💡 **Phục vụ Thuyết trình PRM393:**
 > - Tại màn hình đăng nhập `S01`: Có sẵn **3 nút chuyển nhanh Role** (`Khách hàng` / `Chủ sân` / `Quản trị`) để vào app ngay mà không cần gõ phím.
-> - Trên thanh `AppBar`: Có nút mở **Menu Drawer danh mục 29 màn hình** để chuyển thẳng tới bất kỳ màn hình nào theo yêu cầu của Giảng viên.
+> - Trên thanh `AppBar`: Có nút mở **Menu Drawer danh mục 30 màn hình** để chuyển thẳng tới bất kỳ màn hình nào theo yêu cầu của Giảng viên.
 
 ---
 
@@ -191,16 +195,19 @@ Tất cả các sân đều có thông tin thật, tọa độ GPS thực tế v
      - Cập nhật hồ sơ & đổi mật khẩu tài khoản (`S29`).
      - Xác nhận lệnh rút tiền Payout của Chủ sân (`S23`).
 
-5. **Module 5: Trung Tâm Thông Báo (Real-Time Notification)**
-   - Màn hình **`S05`** lưu trữ và cập nhật tức thì các biến động: thanh toán thành công, hoàn tiền ví, rút tiền ví thành công, có người tham gia kèo giao lưu, phê duyệt cơ sở.
-   - Thanh `AppBar` hiển thị Badge đếm số lượng thông báo chưa đọc.
+5. **Module 5: Mạng Xã Hội Ghép Kèo (Video & Trình Độ) & Trung Tâm Thông Báo**
+   - **`S05`**: Trung tâm thông báo thời gian thực lưu trữ và cập nhật tức thì các biến động: thanh toán thành công, hoàn tiền ví, rút tiền ví thành công, có người tham gia kèo giao lưu, phê duyệt cơ sở. Thanh `AppBar` hiển thị Badge đếm số lượng thông báo chưa đọc.
+   - **`S15` & `S16` & `S30` (Ghép kèo giao lưu kèm Video)**:
+     - **`S16`**: Chủ kèo có thể quay video từ camera hoặc chọn video từ thư viện (giới hạn an toàn ≤60 giây, dung lượng ≤50MB), xem trước và điều chỉnh trước khi đăng.
+     - **`S15`**: Bảng tin hiển thị badge "Có video" trên thẻ kèo, chạm thẻ để mở trực tiếp trang chi tiết.
+     - **`S30`**: Phát video thực tế nhóm đánh (`MatchVideoPlayer`), hiển thị đánh giá độ tương thích trình độ (Khớp / Lệch 1 bậc / Lệch nhiều), giúp người chơi cân nhắc kỹ trước khi bấm "Xin tham gia".
 
 6. **Module 6: Trợ Lý Ảo Chat AI Thông Minh**
    - Màn hình **`S17`** kết nối backend `/api/ai/chat`, nạp ngữ cảnh dữ liệu sân bãi thực tế từ SQLite (tình trạng sân trống, mức giá sinh viên, các kèo đang mở, chính sách hoàn vé) và tự sinh các nút tắt điều hướng nhanh trong tin nhắn.
 
 ---
 
-## 7. Bản Đồ 29 Màn Hình (`S01` -> `S29`) & 5 Luồng Nghiệp Vụ
+## 7. Bản Đồ 30 Màn Hình (`S01` -> `S30`) & 5 Luồng Nghiệp Vụ
 
 ### Sơ đồ điều hướng tổng thể (Mermaid Flowchart)
 
@@ -231,7 +238,9 @@ flowchart TD
         S27 --> S03
         S18 --> S29["S29: Sửa hồ sơ & Đổi mật khẩu"]
         S06 --> S15["S15: Bảng tin ghép kèo"]
-        S15 --> S16["S16: Đăng kèo giao lưu"]
+        S15 --> S16["S16: Đăng kèo (Kèm Video)"]
+        S15 --> S30["S30: Chi tiết kèo & Video"]
+        S16 -.-> S15
         S06 --> S17["S17: Trợ lý Chat AI Gemini"]
         S06 --> S18
     end
@@ -251,7 +260,7 @@ flowchart TD
     end
 ```
 
-### Bảng Danh Mục Chi Tiết 29 Màn Hình (`S01` — `S29`)
+### Bảng Danh Mục Chi Tiết 30 Màn Hình (`S01` — `S30`)
 
 | Mã | Tên Màn Hình | Nhóm Phân Quyền | Tính Năng & Luồng Nghiệp Vụ Chính |
 | :---: | :--- | :---: | :--- |
@@ -269,8 +278,8 @@ flowchart TD
 | **`S12`** | **Lịch Đặt sân Của Tôi (My Bookings)** | Người chơi | Quản lý danh sách vé: Đã xác nhận (`CONFIRMED`), Chờ thanh toán, Hoàn thành, Đã hủy. |
 | **`S13`** | **Chi tiết Vé & Mã QR Check-in (Ticket Detail)** | Người chơi | Chi tiết đặt sân, sinh mã QR check-in tại sân, nút chuyển Đổi lịch / Hủy vé / Đánh giá sân (`S28`). |
 | **`S14`** | **Hủy vé & Đổi lịch (Cancel / Reschedule)** | Người chơi | Tự động tính tỷ lệ hoàn tiền theo chính sách (100% ≥24h, 50% 6-24h), hoàn tiền tức thì vào Ví. |
-| **`S15`** | **Bảng tin Ghép kèo (Matchmaking Feed)** | Người chơi | Mạng xã hội thể thao: xem danh sách các kèo mở quanh Làng ĐH, lọc theo trình độ, xin tham gia/duyệt thành viên. |
-| **`S16`** | **Đăng tin Mở kèo (Create Match Post)** | Người chơi | Tạo kèo mới: chọn sân, ngày giờ, trình độ yêu cầu (Cơ bản -> Chuyên nghiệp), chi phí chia sẻ. |
+| **`S15`** | **Bảng tin Ghép kèo (Matchmaking Feed)** | Người chơi | Bảng tin giao lưu thể thao: lọc kèo theo trình độ, gắn nhãn video, mở chi tiết `S30`, xin tham gia/duyệt thành viên. |
+| **`S16`** | **Đăng tin Mở kèo (Create Match Post)** | Người chơi | Mở kèo mới: chọn sân, ngày giờ, trình độ yêu cầu, chi phí chia sẻ và **đính kèm video nhóm đánh (≤60s)**. |
 | **`S17`** | **Trợ lý Ảo AI Gemini (AI Assistant Chat)** | Người chơi | Chatbot AI tư vấn thông minh, phân tích dữ liệu sân thật, gợi ý kèo đấu và hỗ trợ điều hướng nhanh. |
 | **`S18`** | **Ví Cầu Lông & Hồ sơ (Profile & Wallet)** | Người chơi | Hiển thị số dư ví, lịch sử biến động số dư, thông tin cá nhân, lối tắt Rút tiền (`S27`) & Sửa hồ sơ (`S29`). |
 | **`S19`** | **Tổng quan Doanh thu Chủ sân (Owner Dashboard)**| Chủ sân | Dashboard theo dõi doanh thu thực nhận, công suất sân, số lượt đặt online và số dư chờ giải ngân. |
@@ -281,9 +290,10 @@ flowchart TD
 | **`S24`** | **Tổng quan Sàn Admin (Admin Dashboard)** | Quản trị | Thống kê toàn hệ thống: tổng người dùng, tổng cơ sở, tổng GMV và dòng tiền đối soát sàn. |
 | **`S25`** | **Kiểm duyệt Sân & Cơ sở (Admin Approval)** | Quản trị | Xem xét hồ sơ sân mới từ Chủ sân (địa chỉ, GPS, hình ảnh), phê duyệt kích hoạt hoặc từ chối. |
 | **`S26`** | **Đối soát & Duyệt Giải ngân (Admin Payout Audit)**| Quản trị | Danh sách yêu cầu rút tiền Payout của các chủ sân, kiểm tra giao dịch PayOS và phê duyệt giải ngân. |
-| **`S27`** | **Rút tiền Ví Cầu Lông (Wallet Withdraw)** ⭐ *Mới* | Người chơi | Rút số dư ví về tài khoản ngân hàng cá nhân (tối thiểu 50.000đ), liên kết luồng xác thực OTP `S03`. |
-| **`S28`** | **Đánh giá & Phản hồi Sân (Venue Review)** ⭐ *Mới* | Người chơi | Đánh giá sao (1-5★), gắn tags (sân đẹp, ánh sáng tốt, vệ sinh sạch), viết cảm nghĩ sau trận đấu. |
-| **`S29`** | **Sửa Hồ sơ & Đổi Mật khẩu (Edit Profile)** ⭐ *Mới* | Người chơi | Cập nhật họ tên, số điện thoại, trình độ cầu lông kỹ thuật và tính năng đổi mật khẩu tài khoản. |
+| **`S27`** | **Rút tiền Ví Cầu Lông (Wallet Withdraw)** ⭐ | Người chơi | Rút số dư ví về tài khoản ngân hàng cá nhân (tối thiểu 50.000đ), liên kết luồng xác thực OTP `S03`. |
+| **`S28`** | **Đánh giá & Phản hồi Sân (Venue Review)** ⭐ | Người chơi | Đánh giá sao (1-5★), gắn tags (sân đẹp, ánh sáng tốt, vệ sinh sạch), viết cảm nghĩ sau trận đấu. |
+| **`S29`** | **Sửa Hồ sơ & Đổi Mật khẩu (Edit Profile)** ⭐ | Người chơi | Cập nhật họ tên, số điện thoại, trình độ cầu lông kỹ thuật và tính năng đổi mật khẩu tài khoản. |
+| **`S30`** | **Chi tiết Kèo & Video Nhóm (Match Detail)** ⭐ *Mới* | Người chơi | Phát video thực tế nhóm đánh, thuật toán so sánh độ lệch trình độ (khớp / lệch 1 bậc / lệch nhiều), nút xin tham gia kèm kiểm soát trạng thái. |
 
 ---
 
@@ -298,12 +308,12 @@ Dự án được cấu hình và kiểm thử tự động đạt tiêu chuẩn
    ```
    *Kết quả: `No issues found!` (0 errors, 0 warnings).*
 
-2. **Kiểm thử Responsive toàn bộ 29 màn hình (`flutter test`)**:
+2. **Kiểm thử Responsive toàn bộ 30 màn hình (`flutter test`)**:
    ```bash
    cd mobile
    flutter test
    ```
-   *Chạy tự động kiểm tra hiện tượng tràn pixel (overflow) của 29 màn hình trên 4 cấu hình kích thước thiết bị:*
+   *Chạy tự động kiểm tra hiện tượng tràn pixel (overflow) của 30 màn hình trên 4 cấu hình kích thước thiết bị:*
    - Điện thoại nhỏ: `360 x 640` (Small Phone Portrait) — **PASS (0 overflow)**
    - Màn hình xoay ngang: `640 x 360` (Phone Landscape) — **PASS (0 overflow)**
    - Máy tính bảng: `800 x 1280` (Tablet Portrait) — **PASS (0 overflow)**

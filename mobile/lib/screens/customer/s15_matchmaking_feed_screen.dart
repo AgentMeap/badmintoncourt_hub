@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/match_video.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -9,6 +10,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // - Chỉ CHỦ KÈO thấy nút duyệt thành viên
 // - Không xin vào kèo của chính mình, kèo đã đủ người, hoặc xin lại lần 2
 // - Xin tham gia sẽ thêm bạn vào danh sách chờ duyệt của kèo
+// - Bấm vào thẻ kèo để mở S30 (chi tiết + video nhóm đánh)
 class S15MatchmakingFeedScreen extends StatefulWidget {
   final AppState appState;
   const S15MatchmakingFeedScreen({super.key, required this.appState});
@@ -110,6 +112,10 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
 
     return SurfaceCard(
       padding: const EdgeInsets.all(14),
+      onTap: () {
+        _app.selectedMatch = entry;
+        _app.goTo('S30');
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -141,6 +147,28 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
                         ],
                       ),
                     ),
+                    if (MatchVideoRules.hasVideo(post))
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.play_circle_outline, size: 14, color: cs.onPrimaryContainer),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Có video',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: cs.onPrimaryContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     if (isHost)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

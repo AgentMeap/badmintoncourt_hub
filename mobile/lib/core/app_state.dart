@@ -20,6 +20,8 @@ class AppState extends ChangeNotifier {
   // Active selection context across screens
   Map<String, dynamic>? selectedVenue;
   Map<String, dynamic>? selectedBooking;
+  // Kèo đang xem ở S30 (chọn từ thẻ kèo ở S15)
+  Map<String, dynamic>? selectedMatch;
   Map<String, dynamic>? activePayosPayment;
   Map<String, dynamic>? pendingPayoutDraft;
   /// Yêu cầu rút tiền Ví đang chờ xác thực OTP (tạo ở S27, xử lý ở S03).

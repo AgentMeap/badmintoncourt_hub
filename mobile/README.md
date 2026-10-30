@@ -1,7 +1,7 @@
 # Badminton Court Hub V2 – Mobile (Flutter)
 
 Ứng dụng đặt sân & quản lý cơ sở cầu lông cho 3 vai trò: **Người chơi**, **Chủ sân**, **Quản trị viên**.
-Đồ án môn PRM393 – 29 màn hình (S01–S29), 5 luồng nghiệp vụ, 6 module.
+Đồ án môn PRM393 – 30 màn hình (S01–S30), 5 luồng nghiệp vụ, 6 module.
 
 ## Chạy dự án
 
@@ -15,7 +15,7 @@ flutter test           # kiểm tra tràn giao diện của toàn bộ màn hìn
   Khi không kết nối được backend, app tự dùng dữ liệu mẫu trong `AppState`.
 - Đăng nhập demo: `customer@badminton.vn`, `owner@badminton.vn`, `admin@badminton.vn` (mật khẩu `123456`),
   hoặc bấm ô vai trò ở màn đăng nhập.
-- Menu ☰ liệt kê đủ 29 màn (kèm mã S01–S29) để trình bày; đầu menu có nút chọn giao diện Sáng / Tối / Theo hệ thống.
+- Menu ☰ liệt kê đủ 30 màn (kèm mã S01–S30) để trình bày; đầu menu có nút chọn giao diện Sáng / Tối / Theo hệ thống.
 
 ## Cấu trúc thư mục
 
@@ -25,7 +25,7 @@ lib/
   app/
     app_shell.dart          "Master page": Scaffold + AppBar + điều hướng + phím Back (PopScope)
     app_navigation.dart     Tab theo vai trò (NavSpec) + NavigationBar (điện thoại) / NavigationRail (tablet)
-    app_drawer.dart         Menu demo 29 màn + chọn giao diện sáng/tối
+    app_drawer.dart         Menu demo 30 màn + chọn giao diện sáng/tối
     screen_registry.dart    BẢNG DUY NHẤT: mã màn → tiêu đề + widget
     app_theme.dart          Theme sáng/tối, font Barlow
     scroll_to_top.dart      Nút "Lên đầu trang" dùng chung cho mọi màn hình
@@ -39,7 +39,7 @@ lib/
     screens.dart            Export toàn bộ màn hình
     auth/                   S01 Đăng nhập · S02 Đăng ký · S03 OTP · S04 Quên mật khẩu
     shared/                 S05 Thông báo
-    customer/               S06 Trang chủ … S18 Ví & hồ sơ, S27 Rút tiền, S28 Đánh giá sân, S29 Sửa hồ sơ
+    customer/               S06 Trang chủ … S18 Ví & hồ sơ, S27 Rút tiền, S28 Đánh giá sân, S29 Sửa hồ sơ, S30 Chi tiết kèo & video
     owner/                  S19 Tổng quan … S23 Giải ngân
     admin/                  S24 Tổng quan … S26 Duyệt giải ngân
 assets/fonts/               Barlow, Barlow Condensed (giấy phép OFL – xem OFL.txt)
@@ -88,3 +88,13 @@ Xây dựng theo skill **ui-ux-pro-max** (nextlevelbuilder/ui-ux-pro-max-skill):
 - Thanh toán xong, Back từ vé không quay lại màn thanh toán / QR (`completeFlow`).
 - Cuộn sâu hơn ~1 màn hình sẽ hiện nút **"Lên đầu trang"** ở giữa phía trên (ẩn khi đang vuốt xuống);
   chạm lại tab đang mở cũng cuộn về đầu (`app/scroll_to_top.dart`). Không áp dụng cho Trợ lý AI.
+
+## Video kèo giao lưu (S16 → S15 → S30)
+
+- Chủ kèo có thể đính kèm video nhóm đánh khi đăng kèo (S16): chọn từ thư viện hoặc quay mới (web chỉ chọn file),
+  tối đa **60 giây / 50 MB** (`MatchVideoRules` trong `lib/core/match_video.dart`), có xem trước, đổi, xóa.
+- Thẻ kèo ở S15 có nhãn "Có video"; bấm thẻ mở S30: xem video, so trình độ của bạn với yêu cầu, rồi xin tham gia.
+- Thư viện: `image_picker` (chọn/quay), `video_player` (phát). Sau khi thêm cần `flutter pub get` và build lại
+  từ đầu (đã thêm quyền INTERNET cho Android, quyền thư viện/camera/micro cho iOS).
+- Backend cần endpoint `POST /matches/{id}/video` (multipart, field `file`), trả về `{"videoUrl": "https://..."}`.
+  Khi chưa có backend, video vẫn xem được trên chính máy đã đăng (đường dẫn file cục bộ).

@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Cho phép chọn video từ thư viện để đăng kèm kèo giao lưu.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Cho phép dùng camera để quay video nhóm đánh khi đăng kèo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cho phép ghi âm thanh khi quay video kèo giao lưu.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

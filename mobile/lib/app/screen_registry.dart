@@ -51,6 +51,7 @@ class ScreenRegistry {
     ScreenEntry('S27', 'S27 • Rút tiền Ví về Ngân hàng', (s) => S27WalletWithdrawScreen(appState: s)),
     ScreenEntry('S28', 'S28 • Đánh giá sân sau khi chơi', (s) => S28VenueReviewScreen(appState: s)),
     ScreenEntry('S29', 'S29 • Sửa hồ sơ & Đổi mật khẩu', (s) => S29EditProfileScreen(appState: s)),
+    ScreenEntry('S30', 'S30 • Chi tiết kèo & Video', (s) => S30MatchDetailScreen(appState: s)),
   ];
 
   static final Map<String, ScreenEntry> _byCode = {for (final e in all) e.code: e};

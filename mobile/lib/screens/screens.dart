@@ -20,6 +20,7 @@ export 'customer/s18_profile_wallet_screen.dart';
 export 'customer/s27_wallet_withdraw_screen.dart';
 export 'customer/s28_venue_review_screen.dart';
 export 'customer/s29_edit_profile_screen.dart';
+export 'customer/s30_match_detail_screen.dart';
 export 'owner/s19_owner_dashboard_screen.dart';
 export 'owner/s20_venue_onboarding_screen.dart';
 export 'owner/s21_owner_master_schedule_screen.dart';
