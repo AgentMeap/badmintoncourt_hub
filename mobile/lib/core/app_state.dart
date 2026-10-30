@@ -22,6 +22,8 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? selectedBooking;
   Map<String, dynamic>? activePayosPayment;
   Map<String, dynamic>? pendingPayoutDraft;
+  /// Yêu cầu rút tiền Ví đang chờ xác thực OTP (tạo ở S27, xử lý ở S03).
+  Map<String, dynamic>? pendingWithdrawDraft;
 
   // Data caches (synced from Spring Boot SQLite API, with rich initial fallback)
   List<Map<String, dynamic>> venues = [
@@ -363,6 +365,9 @@ class AppState extends ChangeNotifier {
       'createdAt': 'Hôm qua',
     },
   ];
+
+  /// Đánh giá sân của người chơi (S28 tạo, S08 hiển thị).
+  List<Map<String, dynamic>> reviews = [];
 
   List<Map<String, dynamic>> walletTransactions = [
     {

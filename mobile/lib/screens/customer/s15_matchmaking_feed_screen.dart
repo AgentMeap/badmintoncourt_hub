@@ -115,53 +115,64 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    Icon(Icons.bar_chart_rounded, size: 14, color: cs.onTertiaryContainer),
-                    const SizedBox(width: 4),
-                    Text(
-                      SkillLevel.label(post['requiredSkill']?.toString()),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: cs.onTertiaryContainer,
-                        fontWeight: FontWeight.w700,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: cs.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bar_chart_rounded, size: 14, color: cs.onTertiaryContainer),
+                          const SizedBox(width: 4),
+                          Text(
+                            SkillLevel.label(post['requiredSkill']?.toString()),
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: cs.onTertiaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    if (isHost)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Kèo của bạn',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: cs.onSecondaryContainer,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (isHost) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: cs.secondaryContainer,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Kèo của bạn',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: cs.onSecondaryContainer,
-                      fontWeight: FontWeight.w700,
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.group_outlined, size: 18, color: full ? cs.error : cs.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$current/$max',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: full ? cs.error : cs.primary,
                     ),
                   ),
-                ),
-              ],
-              const Spacer(),
-              Icon(Icons.group_outlined, size: 18, color: full ? cs.error : cs.primary),
-              const SizedBox(width: 4),
-              Text(
-                '$current/$max',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: full ? cs.error : cs.primary,
-                ),
+                ],
               ),
             ],
           ),

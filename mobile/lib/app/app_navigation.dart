@@ -63,8 +63,8 @@ class NavSpec {
     int idx = 0;
     if (code == 'S07') idx = 1;
     if (code == 'S15' || code == 'S16') idx = 2;
-    if (code == 'S12' || code == 'S13' || code == 'S14') idx = 3;
-    if (code == 'S18') idx = 4;
+    if (code == 'S12' || code == 'S13' || code == 'S14' || code == 'S28') idx = 3;
+    if (code == 'S18' || code == 'S27' || code == 'S29') idx = 4;
 
     return NavSpec(
       selectedIndex: idx,

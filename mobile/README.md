@@ -1,21 +1,21 @@
 # Badminton Court Hub V2 – Mobile (Flutter)
 
 Ứng dụng đặt sân & quản lý cơ sở cầu lông cho 3 vai trò: **Người chơi**, **Chủ sân**, **Quản trị viên**.
-Đồ án môn PRM393 – 26 màn hình (S01–S26), 5 luồng nghiệp vụ, 6 module.
+Đồ án môn PRM393 – 29 màn hình (S01–S29), 5 luồng nghiệp vụ, 6 module.
 
 ## Chạy dự án
 
 ```bash
 flutter pub get
 flutter run            # chọn Chrome (web) hoặc máy ảo Android
-flutter test           # kiểm tra tràn giao diện của 26 màn trên 4 kích thước màn hình
+flutter test           # kiểm tra tràn giao diện của toàn bộ màn hình trên 4 kích thước màn hình
 ```
 
 - Backend Spring Boot chạy tại `http://localhost:8080/api` (Android emulator: `10.0.2.2`).
   Khi không kết nối được backend, app tự dùng dữ liệu mẫu trong `AppState`.
 - Đăng nhập demo: `customer@badminton.vn`, `owner@badminton.vn`, `admin@badminton.vn` (mật khẩu `123456`),
   hoặc bấm ô vai trò ở màn đăng nhập.
-- Menu ☰ liệt kê đủ 26 màn (kèm mã S01–S26) để trình bày; đầu menu có nút chọn giao diện Sáng / Tối / Theo hệ thống.
+- Menu ☰ liệt kê đủ 29 màn (kèm mã S01–S29) để trình bày; đầu menu có nút chọn giao diện Sáng / Tối / Theo hệ thống.
 
 ## Cấu trúc thư mục
 
@@ -25,7 +25,7 @@ lib/
   app/
     app_shell.dart          "Master page": Scaffold + AppBar + điều hướng + phím Back (PopScope)
     app_navigation.dart     Tab theo vai trò (NavSpec) + NavigationBar (điện thoại) / NavigationRail (tablet)
-    app_drawer.dart         Menu demo 26 màn + chọn giao diện sáng/tối
+    app_drawer.dart         Menu demo 29 màn + chọn giao diện sáng/tối
     screen_registry.dart    BẢNG DUY NHẤT: mã màn → tiêu đề + widget
     app_theme.dart          Theme sáng/tối, font Barlow
     scroll_to_top.dart      Nút "Lên đầu trang" dùng chung cho mọi màn hình
@@ -39,7 +39,7 @@ lib/
     screens.dart            Export toàn bộ màn hình
     auth/                   S01 Đăng nhập · S02 Đăng ký · S03 OTP · S04 Quên mật khẩu
     shared/                 S05 Thông báo
-    customer/               S06 Trang chủ … S18 Ví & hồ sơ
+    customer/               S06 Trang chủ … S18 Ví & hồ sơ, S27 Rút tiền, S28 Đánh giá sân, S29 Sửa hồ sơ
     owner/                  S19 Tổng quan … S23 Giải ngân
     admin/                  S24 Tổng quan … S26 Duyệt giải ngân
 assets/fonts/               Barlow, Barlow Condensed (giấy phép OFL – xem OFL.txt)

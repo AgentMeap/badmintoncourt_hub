@@ -48,6 +48,9 @@ class ScreenRegistry {
     ScreenEntry('S24', 'S24 • Admin Platform Dashboard', (s) => S24AdminDashboardScreen(appState: s)),
     ScreenEntry('S25', 'S25 • Kiểm duyệt Cơ sở & Người dùng', (s) => S25AdminModerationScreen(appState: s)),
     ScreenEntry('S26', 'S26 • Đối soát PayOS & Duyệt Payout', (s) => S26AdminPayoutReconciliationScreen(appState: s)),
+    ScreenEntry('S27', 'S27 • Rút tiền Ví về Ngân hàng', (s) => S27WalletWithdrawScreen(appState: s)),
+    ScreenEntry('S28', 'S28 • Đánh giá sân sau khi chơi', (s) => S28VenueReviewScreen(appState: s)),
+    ScreenEntry('S29', 'S29 • Sửa hồ sơ & Đổi mật khẩu', (s) => S29EditProfileScreen(appState: s)),
   ];
 
   static final Map<String, ScreenEntry> _byCode = {for (final e in all) e.code: e};

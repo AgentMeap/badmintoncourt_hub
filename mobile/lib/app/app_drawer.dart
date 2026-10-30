@@ -26,7 +26,7 @@ class AppDrawer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Danh mục 26 màn hình (PRM393)',
+                    'Danh mục ${ScreenRegistry.all.length} màn hình (PRM393)',
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: cs.onPrimary,
                       fontWeight: FontWeight.w700,

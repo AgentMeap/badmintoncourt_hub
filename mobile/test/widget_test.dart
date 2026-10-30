@@ -39,6 +39,9 @@ class _MockHttpClientRequest extends Fake implements HttpClientRequest {
   int maxRedirects = 5;
 
   @override
+  int contentLength = 0;
+
+  @override
   final HttpHeaders headers = _MockHttpHeaders();
 
   @override
@@ -101,10 +104,11 @@ void main() {
     'S15', 'S16', 'S17', 'S18',
     'S19', 'S20', 'S21', 'S22',
     'S23', 'S24', 'S25', 'S26',
+    'S27', 'S28', 'S29',
   ];
 
   for (final size in testSizes) {
-    testWidgets('Verify zero overflow at ${size.width.toInt()}x${size.height.toInt()} across all 26 screens',
+    testWidgets('Verify zero overflow at ${size.width.toInt()}x${size.height.toInt()} across all 29 screens',
         (WidgetTester tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;

@@ -122,6 +122,11 @@ class S18ProfileWalletScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              IconButton(
+                tooltip: 'Sửa hồ sơ',
+                onPressed: () => appState.goTo('S29'),
+                icon: const Icon(Icons.edit_outlined),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -167,11 +172,9 @@ class S18ProfileWalletScreen extends StatelessWidget {
                     _quickAction(context, Icons.confirmation_number_outlined, 'Vé của tôi',
                         () => appState.goToTab('S12', 'S06')),
                     const SizedBox(width: 8),
-                    _quickAction(context, Icons.account_balance_outlined, 'Rút tiền', () {
-                      appState.lastOtpEmail = appState.email;
-                      appState.lastOtpPurpose = 'WITHDRAW_WALLET';
-                      appState.goTo('S03');
-                    }),
+                    // Mở màn nhập số tiền & tài khoản trước, OTP sau (S27 -> S03)
+                    _quickAction(context, Icons.account_balance_outlined, 'Rút tiền',
+                        () => appState.goTo('S27')),
                   ],
                 ),
               ],

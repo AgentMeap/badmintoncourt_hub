@@ -135,7 +135,22 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
             }),
           ],
         ),
-        SimpleAttributionWidget(source: const Text('OpenStreetMap contributors')),
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Container(
+            margin: const EdgeInsets.all(6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: cs.surface.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: cs.outlineVariant, width: 0.5),
+            ),
+            child: Text(
+              '© OpenStreetMap',
+              style: theme.textTheme.labelSmall?.copyWith(fontSize: 10, color: cs.onSurfaceVariant),
+            ),
+          ),
+        ),
       ],
     );
   }

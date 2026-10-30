@@ -266,6 +266,20 @@ class S13BookingDetailQrScreen extends StatelessWidget {
           ),
           ),
 
+          // Đánh giá sân: hiện khi vé đã nhận sân / hoàn thành
+          if (b['status'] == 'CHECKED_IN' || b['status'] == 'COMPLETED') ...[
+            const SizedBox(height: 16),
+            if (b['reviewed'] == true)
+              NoteBox('Bạn đã đánh giá sân ${b['reviewRating'] ?? ''} sao. Cảm ơn bạn!',
+                  icon: Icons.star_rounded, tone: NoteTone.success)
+            else
+              PrimaryButton(
+                label: 'Đánh giá sân',
+                icon: Icons.star_outline_rounded,
+                onPressed: () => appState.goTo('S28'),
+              ),
+          ],
+
           if (!cancelled) ...[
             const SizedBox(height: 16),
             // Mở kèo giao lưu

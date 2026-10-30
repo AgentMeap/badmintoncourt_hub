@@ -69,6 +69,49 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
     if (!mounted) return;
     setState(() => _loading = false);
 
+    // Rút tiền Ví (từ S27): kiểm tra lại số dư, trừ ví, ghi lịch sử giao dịch
+    if (widget.appState.lastOtpPurpose == 'WITHDRAW_WALLET' &&
+        widget.appState.pendingWithdrawDraft != null) {
+      final w = widget.appState.pendingWithdrawDraft!;
+      final amount = (w['amount'] as num).toDouble();
+      if (amount > widget.appState.walletBalance) {
+        widget.appState.pendingWithdrawDraft = null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Số dư đã thay đổi và không đủ để rút. Vui lòng thử lại.')),
+        );
+        widget.appState.completeFlow('S18', flowStart: 'S27');
+        return;
+      }
+      try {
+        await ApiService.post('/wallet/withdraw', {
+          'userId': widget.appState.userId,
+          'amount': amount,
+          'bankName': w['bankName'],
+          'bankAccountNumber': w['bankAccountNumber'],
+          'bankAccountHolder': w['bankAccountHolder'],
+        });
+      } catch (_) {}
+      if (!mounted) return;
+      widget.appState.walletBalance -= amount;
+      widget.appState.walletTransactions.insert(0, {
+        'title': 'Rút về ${w['bankName']} • ${w['bankAccountNumber']}',
+        'amount': -amount,
+        'type': 'WITHDRAW',
+        'createdAt': 'Vừa xong',
+      });
+      widget.appState.pendingWithdrawDraft = null;
+      widget.appState.pushNotification(
+        title: 'Đã gửi yêu cầu rút ${UiFmt.vnd(amount)}',
+        body: 'Tiền sẽ về ${w['bankName']} • ${w['bankAccountNumber']} trong 1 - 2 ngày làm việc.',
+        type: 'PAYMENT',
+        targetScreen: 'S18',
+        context: context,
+      );
+      // Quay về Ví, bỏ S27 và màn OTP khỏi lịch sử
+      widget.appState.completeFlow('S18', flowStart: 'S27');
+      return;
+    }
+
     if (widget.appState.lastOtpPurpose == 'PAYOUT' && widget.appState.pendingPayoutDraft != null) {
       final draft = widget.appState.pendingPayoutDraft!;
       widget.appState.payoutRequests.insert(0, draft);

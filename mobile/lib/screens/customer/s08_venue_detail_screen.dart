@@ -256,6 +256,70 @@ class S08VenueDetailScreen extends StatelessWidget {
                   ),
                 ],
 
+                // Đánh giá gần đây (từ S28)
+                ...() {
+                  final rs = appState.reviews
+                      .where((r) => '${r['venueId']}' == '${v['id']}')
+                      .take(3)
+                      .toList();
+                  if (rs.isEmpty) return const <Widget>[];
+                  return <Widget>[
+                    const SizedBox(height: 24),
+                    Text('Đánh giá gần đây',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    for (final r in rs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SurfaceCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text('${r['userName']}',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(fontWeight: FontWeight.w700)),
+                                  ),
+                                  Semantics(
+                                    label: '${r['rating']} trên 5 sao',
+                                    excludeSemantics: true,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        for (var i = 1; i <= 5; i++)
+                                          Icon(
+                                            i <= (r['rating'] as int)
+                                                ? Icons.star_rounded
+                                                : Icons.star_outline_rounded,
+                                            size: 16,
+                                            color: Colors.amber.shade700,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if ((r['tags'] as List).isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text((r['tags'] as List).join(' • '),
+                                    style: theme.textTheme.bodySmall?.copyWith(color: cs.primary)),
+                              ],
+                              if ('${r['comment']}'.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text('${r['comment']}',
+                                    style: theme.textTheme.bodyMedium
+                                        ?.copyWith(color: cs.onSurfaceVariant, height: 1.4)),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                  ];
+                }(),
+
                 const SizedBox(height: 24),
                 Text('Bảng giá',
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
