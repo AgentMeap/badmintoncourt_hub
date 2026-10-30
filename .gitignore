@@ -1,0 +1,131 @@
+# ==============================================================================
+# Badminton V2 - Root .gitignore (Monorepo)
+# Quản lý toàn bộ dự án: Backend (Spring Boot Java) + Mobile (Flutter Dart)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BẢO MẬT & TỆP NHẠY CẢM (Tránh lộ API Key, Secret, Token, Password)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.pkcs12
+*.jks
+*.keystore
+key.properties
+application-local.properties
+application-secret.properties
+application-prod.properties
+application-*.local.properties
+application-*.local.yml
+
+# ------------------------------------------------------------------------------
+# 2. THƯ MỤC BUILD NẶNG - BACKEND (Maven / Java - Thành viên tự kéo về build)
+# ------------------------------------------------------------------------------
+**/target/
+**/*.class
+**/*.jar
+**/*.war
+**/*.nar
+**/*.ear
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ------------------------------------------------------------------------------
+# 3. THƯ MỤC BUILD NẶNG - MOBILE (Flutter / Dart / Gradle / Pods)
+# ------------------------------------------------------------------------------
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/coverage/
+.widget_preview/
+_ui_backup/
+
+# Android build outputs & local sdk paths
+**/android/.gradle/
+**/android/local.properties
+**/android/captures/
+**/android/gradleBuild/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# iOS & macOS dependencies / CocoaPods
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.framework
+**/ios/**/.last_build_id
+**/macos/Pods/
+**/macos/Flutter/ephemeral/
+*.mobileprovision
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# ------------------------------------------------------------------------------
+# 4. DATABASE NỘI BỘ & LOGS THỜI GIAN CHẠY (Runtime Data)
+# ------------------------------------------------------------------------------
+*.db
+*.db.bak
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+*.pid
+
+# ------------------------------------------------------------------------------
+# 5. MÔI TRƯỜNG PHÁT TRIỂN & IDEs (VS Code, IntelliJ, Eclipse, NetBeans)
+# ------------------------------------------------------------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.settings/
+.project
+.classpath
+.factorypath
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ------------------------------------------------------------------------------
+# 6. HỆ ĐIỀU HÀNH & TỆP TẠM (OS & Temporary files)
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+*.tmp
+*.bak
+*.swp
+*~

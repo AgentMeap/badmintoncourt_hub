@@ -1,0 +1,97 @@
+# ==============================================================================
+# Badminton V2 - Mobile .gitignore (Flutter & Dart)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BẢO MẬT & TỆP NHẠY CẢM (Tránh lộ API Key, Secret, Keystore)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+
+# ------------------------------------------------------------------------------
+# 2. THƯ MỤC BUILD NẶNG - FLUTTER & DART (Thành viên tự chạy flutter build/run)
+# ------------------------------------------------------------------------------
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+coverage/
+**/doc/api/
+.widget_preview/
+_ui_backup/
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# ------------------------------------------------------------------------------
+# 3. THƯ MỤC BUILD NẶNG - ANDROID (Gradle & Local SDK)
+# ------------------------------------------------------------------------------
+android/.gradle/
+android/local.properties
+android/captures/
+android/gradleBuild/
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# ------------------------------------------------------------------------------
+# 4. THƯ MỤC BUILD NẶNG - IOS & MACOS (CocoaPods & Frameworks)
+# ------------------------------------------------------------------------------
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.framework
+ios/**/.last_build_id
+macos/Pods/
+macos/Flutter/ephemeral/
+
+# ------------------------------------------------------------------------------
+# 5. LINUX & WINDOWS EPHEMERAL BUILDS
+# ------------------------------------------------------------------------------
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# ------------------------------------------------------------------------------
+# 6. MÔI TRƯỜNG PHÁT TRIỂN & IDEs (VS Code, Android Studio, IntelliJ)
+# ------------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ------------------------------------------------------------------------------
+# 7. HỆ ĐIỀU HÀNH & TỆP TẠM
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+*.tmp
+*.bak
+*.swp
+*~
+*.log

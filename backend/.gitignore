@@ -1,0 +1,86 @@
+# ==============================================================================
+# Badminton V2 - Backend .gitignore (Spring Boot & Maven)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BẢO MẬT & TỆP NHẠY CẢM (Tránh lộ API Key, Secret, Token, Password)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+application-local.properties
+application-secret.properties
+application-prod.properties
+application-*.local.properties
+application-*.local.yml
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# ------------------------------------------------------------------------------
+# 2. THƯ MỤC BUILD NẶNG & FILE BIÊN DỊCH (Maven / Target - Tự build khi kéo về)
+# ------------------------------------------------------------------------------
+target/
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Maven release plugin & wrapper temp
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ------------------------------------------------------------------------------
+# 3. DATABASE NỘI BỘ & LOGS THỜI GIAN CHẠY (Runtime Data)
+# ------------------------------------------------------------------------------
+*.db
+*.db.bak
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+*.pid
+
+# ------------------------------------------------------------------------------
+# 4. MÔI TRƯỜNG PHÁT TRIỂN & IDEs (IntelliJ, VS Code, Eclipse)
+# ------------------------------------------------------------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.settings/
+.project
+.classpath
+.factorypath
+
+# ------------------------------------------------------------------------------
+# 5. HỆ ĐIỀU HÀNH & TỆP TẠM
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
+*.tmp
+*.bak
+*.swp
+*~

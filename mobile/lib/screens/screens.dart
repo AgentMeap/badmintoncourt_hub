@@ -1,0 +1,27 @@
+// Export tất cả 26 màn hình - main.dart chỉ cần import file này.
+export 'auth/s01_login_screen.dart';
+export 'auth/s02_register_screen.dart';
+export 'auth/s03_otp_verification_screen.dart';
+export 'auth/s04_forgot_password_screen.dart';
+export 'shared/s05_notifications_screen.dart';
+export 'customer/s06_customer_home_screen.dart';
+export 'customer/s07_map_discovery_screen.dart';
+export 'customer/s08_venue_detail_screen.dart';
+export 'customer/s09_time_slot_grid_screen.dart';
+export 'customer/s10_checkout_screen.dart';
+export 'customer/s11_payos_qr_screen.dart';
+export 'customer/s12_my_bookings_screen.dart';
+export 'customer/s13_booking_detail_qr_screen.dart';
+export 'customer/s14_cancel_reschedule_screen.dart';
+export 'customer/s15_matchmaking_feed_screen.dart';
+export 'customer/s16_create_match_post_screen.dart';
+export 'customer/s17_ai_assistant_chat_screen.dart';
+export 'customer/s18_profile_wallet_screen.dart';
+export 'owner/s19_owner_dashboard_screen.dart';
+export 'owner/s20_venue_onboarding_screen.dart';
+export 'owner/s21_owner_master_schedule_screen.dart';
+export 'owner/s22_qr_check_in_scanner_screen.dart';
+export 'owner/s23_owner_payout_screen.dart';
+export 'admin/s24_admin_dashboard_screen.dart';
+export 'admin/s25_admin_moderation_screen.dart';
+export 'admin/s26_admin_payout_reconciliation_screen.dart';
