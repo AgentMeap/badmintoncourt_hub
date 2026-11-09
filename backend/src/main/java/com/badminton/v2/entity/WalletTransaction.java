@@ -12,7 +12,7 @@ public class WalletTransaction {
     private Long userId;
     private String title;
     private double amount; // positive or negative
-    private String type; // REFUND, BOOKING_PAYMENT, TOPUP, WITHDRAW
+    private String type; // REFUND, BOOKING_PAYMENT, TOPUP, WITHDRAW, MATCH_DEPOSIT_HOLD, MATCH_DEPOSIT_REFUND, MATCH_DEPOSIT_PAYOUT
     private double balanceAfter;
     private String createdAt;
 

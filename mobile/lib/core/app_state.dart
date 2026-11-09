@@ -41,6 +41,31 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? selectedBooking;
   // Kèo đang xem ở S30 (chọn từ thẻ kèo ở S15)
   Map<String, dynamic>? selectedMatch;
+
+  /// Id kèo cần mở ở S30 (từ thông báo); S30 tải bản mới nhất từ máy chủ theo id này.
+  Object? openMatchId;
+
+  /// S30 tự cuộn tới mục "Đơn xin tham gia" (mở từ thông báo có người xin vào kèo).
+  bool openMatchFocusRequests = false;
+
+  /// S30 tự mở bảng đánh giá chủ kèo (mở từ thông báo "Đánh giá chủ kèo").
+  bool openMatchReview = false;
+
+  /// Tab mở sẵn ở S15: 0 = Tìm kèo, 1 = Kèo của tôi.
+  int matchTab = 0;
+
+  /// Mở chi tiết kèo [matchId] (S30). Dùng dữ liệu có sẵn trên máy để hiện ngay, S30 sẽ tải lại.
+  void openMatch(Object matchId, {bool focusRequests = false, bool review = false}) {
+    openMatchId = matchId;
+    openMatchFocusRequests = focusRequests;
+    openMatchReview = review;
+    selectedMatch = null;
+    for (final m in matches) {
+      final post = m['post'];
+      if (post is Map && '${post['id']}' == '$matchId') selectedMatch = m;
+    }
+    goTo('S30');
+  }
   Map<String, dynamic>? activePayosPayment;
   Map<String, dynamic>? pendingPayoutDraft;
   /// Yêu cầu rút tiền Ví đang chờ xác thực OTP (tạo ở S27, xử lý ở S03).

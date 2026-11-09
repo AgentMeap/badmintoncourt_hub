@@ -60,6 +60,12 @@ class _S18ProfileWalletScreenState extends State<S18ProfileWalletScreen> {
         return (Icons.add_card_outlined, 'Nạp tiền');
       case 'WITHDRAW':
         return (Icons.account_balance_outlined, 'Rút tiền');
+      case 'MATCH_DEPOSIT_HOLD':
+        return (Icons.lock_clock_outlined, 'Cọc kèo giao lưu');
+      case 'MATCH_DEPOSIT_REFUND':
+        return (Icons.replay_rounded, 'Hoàn cọc kèo');
+      case 'MATCH_DEPOSIT_PAYOUT':
+        return (Icons.savings_outlined, 'Nhận cọc kèo');
       default:
         return (positive ? Icons.south_west_rounded : Icons.north_east_rounded, 'Giao dịch');
     }

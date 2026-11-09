@@ -7,4 +7,5 @@ import java.util.List;
 public interface MatchPostRepository extends JpaRepository<MatchPost, Long> {
     List<MatchPost> findAllByOrderByIdDesc();
     List<MatchPost> findByVenueIdOrderByIdDesc(Long venueId);
+    List<MatchPost> findByHostIdOrderByIdDesc(Long hostId);
 }

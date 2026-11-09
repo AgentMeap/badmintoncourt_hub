@@ -67,6 +67,8 @@ public class DataSeeder implements CommandLineRunner {
 
         String now = LocalDateTime.now().format(FMT);
         String today = LocalDate.now().toString();
+        // Kèo mẫu: hôm nay nếu còn sớm, sang ngày mai nếu đã chiều (tránh vừa tạo đã bị đóng vì qua giờ)
+        String matchDay = LocalDateTime.now().getHour() < 17 ? today : LocalDate.now().plusDays(1).toString();
         String hash = passwordEncoder.encode("123456");
 
         // 1. Seed Users (3 Core Roles + Extra Community Players)
@@ -389,8 +391,8 @@ public class DataSeeder implements CommandLineRunner {
         m1.setVenueName(v1.getName());
         m1.setVenueAddress(v1.getAddress());
         m1.setCourtName("Sân 2");
-        m1.setTitle("Giao lưu vui vẻ tối nay - Tuyển thêm 2 bạn nam/nữ đánh đôi");
-        m1.setPlayDate(today);
+        m1.setTitle("Giao lưu vui vẻ buổi tối - Tuyển thêm 2 bạn nam/nữ đánh đôi");
+        m1.setPlayDate(matchDay);
         m1.setStartTime("18:00");
         m1.setEndTime("20:00");
         m1.setRequiredSkill("TB_YEU");
@@ -421,7 +423,7 @@ public class DataSeeder implements CommandLineRunner {
         m2.setVenueAddress(v2.getAddress());
         m2.setCourtName("Sân 3");
         m2.setTitle("Kèo trình độ Trung Bình - Cầu Hải Yến S70");
-        m2.setPlayDate(today);
+        m2.setPlayDate(matchDay);
         m2.setStartTime("19:00");
         m2.setEndTime("21:00");
         m2.setRequiredSkill("TRUNG_BINH");

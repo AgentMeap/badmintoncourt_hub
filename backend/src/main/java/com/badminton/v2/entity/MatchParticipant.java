@@ -14,8 +14,16 @@ public class MatchParticipant {
     private String userName;
     private String userSkill;
     private String userPhone;
-    private String status; // PENDING, APPROVED, REJECTED
+    private String status; // PENDING, APPROVED, REJECTED, REMOVED
     private String joinedAt;
+    /** Lý do chủ kèo từ chối (có thể trống). */
+    private String rejectReason;
+    /** Số cọc đã trừ ví khi xin tham gia (0 nếu kèo không cọc). */
+    private Double depositAmount;
+    /** NONE | HELD (đang giữ hộ) | REFUNDED | PARTIAL (hoàn một phần) | FORFEITED (mất cọc) | RELEASED (đã trả chủ kèo). */
+    private String depositStatus;
+    /** Số tiền đã hoàn lại cho người chơi. */
+    private Double refundedAmount;
 
     public MatchParticipant() {}
 
@@ -35,4 +43,12 @@ public class MatchParticipant {
     public void setStatus(String status) { this.status = status; }
     public String getJoinedAt() { return joinedAt; }
     public void setJoinedAt(String joinedAt) { this.joinedAt = joinedAt; }
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
+    public Double getDepositAmount() { return depositAmount; }
+    public void setDepositAmount(Double depositAmount) { this.depositAmount = depositAmount; }
+    public String getDepositStatus() { return depositStatus; }
+    public void setDepositStatus(String depositStatus) { this.depositStatus = depositStatus; }
+    public Double getRefundedAmount() { return refundedAmount; }
+    public void setRefundedAmount(Double refundedAmount) { this.refundedAmount = refundedAmount; }
 }

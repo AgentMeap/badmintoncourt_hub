@@ -45,6 +45,31 @@ class _S05NotificationsScreenState extends State<S05NotificationsScreen> {
     }
   }
 
+  /// Mở màn liên quan tới thông báo. Thông báo kèo có id kèo (referenceId) thì mở đúng kèo đó:
+  /// - "Có người xin tham gia" -> S30 của kèo, cuộn tới mục Đơn xin tham gia (chủ kèo duyệt)
+  /// - "Đã được duyệt" -> S30 của kèo (giờ chơi, sân, đồng đội)
+  /// - "Bị từ chối" -> S15 tab Tìm kèo để tìm kèo khác
+  void _open(Map<String, dynamic> n) {
+    final app = widget.appState;
+    app.markNotificationRead(n);
+    final target = n['targetScreen']?.toString() ?? 'S06';
+    final refId = n['referenceId'];
+    final title = '${n['title'] ?? ''}'.toLowerCase();
+    if (n['type'] == 'MATCHMAKING' && refId != null) {
+      final isRequest = title.contains('xin tham gia');
+      final isApproved = title.contains('duyệt bạn');
+      final isReviewInvite = title.contains('đánh giá chủ kèo');
+      if (target == 'S30' || isRequest || isApproved || isReviewInvite) {
+        app.openMatch(refId, focusRequests: isRequest, review: isReviewInvite);
+        return;
+      }
+      app.matchTab = 0;
+      app.goTo('S15');
+      return;
+    }
+    app.goTo(target);
+  }
+
   /// Bỏ emoji ở đầu tiêu đề cũ (dữ liệu từ backend / dữ liệu mẫu) vì đã có icon riêng.
   static String _cleanTitle(String raw) =>
       raw.replaceFirst(RegExp(r'^[^\p{L}\p{N}#\[(]+', unicode: true), '').trim();
@@ -127,10 +152,7 @@ class _S05NotificationsScreenState extends State<S05NotificationsScreen> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
-                      onTap: () {
-                        widget.appState.markNotificationRead(n);
-                        widget.appState.goTo(n['targetScreen']?.toString() ?? 'S06');
-                      },
+                      onTap: () => _open(n),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Row(

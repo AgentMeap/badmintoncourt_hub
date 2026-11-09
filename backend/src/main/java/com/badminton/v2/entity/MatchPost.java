@@ -28,6 +28,12 @@ public class MatchPost {
     private String videoUrl;
     private String status; // OPEN, FULL, COMPLETED, CANCELLED
     private String createdAt;
+    /** Đã gửi thông báo nhắc lịch trước giờ đánh chưa (null = chưa). */
+    private Boolean reminderSent;
+    /** Cọc trước qua ví: 0 (không cọc), 50 hoặc 100 (% phí mỗi người). null = 0. */
+    private Integer depositPercent;
+    /** Số tiền cọc mỗi người (đã làm tròn lên 1.000đ). */
+    private Double depositAmount;
 
     public MatchPost() {}
 
@@ -71,4 +77,10 @@ public class MatchPost {
     public void setStatus(String status) { this.status = status; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public Boolean getReminderSent() { return reminderSent; }
+    public void setReminderSent(Boolean reminderSent) { this.reminderSent = reminderSent; }
+    public Integer getDepositPercent() { return depositPercent; }
+    public void setDepositPercent(Integer depositPercent) { this.depositPercent = depositPercent; }
+    public Double getDepositAmount() { return depositAmount; }
+    public void setDepositAmount(Double depositAmount) { this.depositAmount = depositAmount; }
 }

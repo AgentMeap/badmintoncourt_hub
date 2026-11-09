@@ -32,6 +32,18 @@ public class User {
     private Boolean localPassword;
     private String createdAt;
 
+    // Uy tín chủ kèo (tính lại bởi HostReputationService mỗi khi có đánh giá / kèo kết thúc / kèo bị hủy)
+    private Integer hostReviewCount;
+    /** Điểm có làm mượt: (3 × 4.0 + tổng sao) / (3 + số đánh giá). */
+    private Double hostRatingScore;
+    /** Tỉ lệ đánh giá "đúng trình độ" (0..1). */
+    private Double hostSkillAccuracy;
+    /** Hướng lệch phổ biến khi không đúng trình độ: HIGHER | LOWER | null. */
+    private String hostSkillBias;
+    /** Kèo bị hủy ÷ kèo đã xong hoặc bị hủy (chỉ tính kèo có người xin). */
+    private Double hostCancelRate;
+    private Integer hostCompletedCount;
+
     public User() {}
 
     public User(String fullName, String email, String phone, String passwordHash, String role, String skillLevel, double walletBalance, boolean isVerified, boolean isActive, String createdAt) {
@@ -76,4 +88,17 @@ public class User {
     public void setActive(boolean active) { isActive = active; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
+    public Integer getHostReviewCount() { return hostReviewCount; }
+    public void setHostReviewCount(Integer hostReviewCount) { this.hostReviewCount = hostReviewCount; }
+    public Double getHostRatingScore() { return hostRatingScore; }
+    public void setHostRatingScore(Double hostRatingScore) { this.hostRatingScore = hostRatingScore; }
+    public Double getHostSkillAccuracy() { return hostSkillAccuracy; }
+    public void setHostSkillAccuracy(Double hostSkillAccuracy) { this.hostSkillAccuracy = hostSkillAccuracy; }
+    public String getHostSkillBias() { return hostSkillBias; }
+    public void setHostSkillBias(String hostSkillBias) { this.hostSkillBias = hostSkillBias; }
+    public Double getHostCancelRate() { return hostCancelRate; }
+    public void setHostCancelRate(Double hostCancelRate) { this.hostCancelRate = hostCancelRate; }
+    public Integer getHostCompletedCount() { return hostCompletedCount; }
+    public void setHostCompletedCount(Integer hostCompletedCount) { this.hostCompletedCount = hostCompletedCount; }
 }

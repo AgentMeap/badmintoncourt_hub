@@ -8,4 +8,5 @@ import java.util.Optional;
 public interface MatchParticipantRepository extends JpaRepository<MatchParticipant, Long> {
     List<MatchParticipant> findByMatchIdOrderByIdAsc(Long matchId);
     Optional<MatchParticipant> findByMatchIdAndUserId(Long matchId, Long userId);
+    List<MatchParticipant> findByUserIdOrderByIdDesc(Long userId);
 }

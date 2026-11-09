@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/match_deposit.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 import 'package:badminton_v2_mobile/core/video_input.dart';
@@ -30,6 +31,8 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
   String _skill = 'TB_YEU';
   int _currentPlayers = 2;
   int _maxPlayers = 6;
+  /// Cọc trước qua ví: 0 (không cọc), 50 hoặc 100 (% chi phí mỗi người).
+  int _depositPercent = 0;
   bool _loading = false;
 
   String _videoUrl = '';
@@ -82,6 +85,7 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
       'maxPlayers': _maxPlayers,
       'currentPlayers': _currentPlayers,
       'feePerPlayer': double.tryParse(_feeCtrl.text) ?? 65000,
+      'depositPercent': _depositPercent,
       'status': 'OPEN',
       if (video != null) 'videoUrl': video.url,
       // Video giới thiệu trình độ của chủ kèo (từ hồ sơ S29) để người xin vào kèo tham khảo
@@ -205,6 +209,7 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _feeCtrl,
+            onChanged: (_) => setState(() {}), // cập nhật số tiền cọc xem trước
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(
@@ -215,6 +220,34 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 20),
+          const SectionHeader('Cọc trước qua ví'),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 0, label: Text('Không cọc')),
+                ButtonSegment(value: 50, label: Text('50%')),
+                ButtonSegment(value: 100, label: Text('100%')),
+              ],
+              selected: {_depositPercent},
+              onSelectionChanged: (v) => setState(() => _depositPercent = v.first),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Builder(builder: (_) {
+            final fee = double.tryParse(_feeCtrl.text) ?? 0;
+            final deposit = MatchDeposit.amountFor(fee, _depositPercent);
+            return NoteBox(
+              _depositPercent == 0
+                  ? 'Không cần cọc: người chơi trả toàn bộ tại sân. Dễ có người xin vào rồi không đến.'
+                  : 'Mỗi người cọc ${UiFmt.vnd(deposit)} qua ví khi xin vào kèo, phần còn lại trả tại sân. '
+                      'Bạn nhận tiền cọc vào ví sau khi kèo kết thúc.\n${MatchDeposit.policyText}',
+              icon: _depositPercent == 0 ? Icons.info_outline : Icons.verified_user_outlined,
+              tone: _depositPercent == 0 ? NoteTone.info : NoteTone.success,
+            );
+          }),
           const SizedBox(height: 20),
           const SectionHeader('Số người'),
           _stepper(theme, 'Đã có (gồm bạn)', _currentPlayers, 1, _maxPlayers - 1,

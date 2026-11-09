@@ -2,6 +2,7 @@ package com.badminton.v2.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NoSuchElementException ex) {
         return error(HttpStatus.NOT_FOUND, "Không tìm thấy dữ liệu yêu cầu.");
+    }
+
+    /** Vi phạm ràng buộc duy nhất (VD bấm "Xin tham gia" 2 lần cùng lúc). Giao dịch đã được rollback. */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(DataIntegrityViolationException ex) {
+        log.debug("Data conflict: {}", ex.getMessage());
+        return error(HttpStatus.CONFLICT, "Yêu cầu bị trùng, có thể bạn vừa bấm 2 lần. Vui lòng tải lại.");
     }
 
     @ExceptionHandler(ForbiddenException.class)
