@@ -5,6 +5,7 @@ import com.badminton.v2.entity.Venue;
 import com.badminton.v2.repository.ReviewRepository;
 import com.badminton.v2.repository.VenueRepository;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.security.CurrentUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -46,10 +47,13 @@ public class ReviewController {
         String bookingCode = String.valueOf(body.getOrDefault("bookingCode", "BK-000000"));
         Long venueId = Long.parseLong(String.valueOf(body.get("venueId")));
         String venueName = String.valueOf(body.getOrDefault("venueName", "Sân Cầu Lông"));
-        Long userId = Long.parseLong(String.valueOf(body.getOrDefault("userId", 1)));
+        Long userId = CurrentUser.idOr(body.getOrDefault("userId", 1));
         String userName = String.valueOf(body.getOrDefault("userName", "Người chơi"));
         int rating = Integer.parseInt(String.valueOf(body.getOrDefault("rating", 5)));
         String comment = String.valueOf(body.getOrDefault("comment", ""));
+        if (rating < 1 || rating > 5) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Số sao phải từ 1 đến 5."));
+        }
 
         String tagsStr = "";
         Object tagsObj = body.get("tags");

@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.security.CurrentUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -81,7 +82,8 @@ public class BookingPaymentController {
     public ResponseEntity<?> holdBookingSlot(@RequestBody Map<String, Object> body) {
         Long venueId = Long.parseLong(String.valueOf(body.get("venueId")));
         Long courtId = Long.parseLong(String.valueOf(body.get("courtId")));
-        Long customerId = Long.parseLong(String.valueOf(body.get("customerId")));
+        // Khách đặt = người đang đăng nhập (không tin "customerId" app gửi lên)
+        Long customerId = CurrentUser.idOr(body.get("customerId"));
         String playDate = String.valueOf(body.getOrDefault("playDate", LocalDate.now().toString()));
         String startTime = String.valueOf(body.getOrDefault("startTime", "18:00"));
         String endTime = String.valueOf(body.getOrDefault("endTime", "20:00"));
@@ -140,6 +142,7 @@ public class BookingPaymentController {
     public ResponseEntity<?> createPayosPayment(@RequestBody Map<String, Object> body) {
         Long bookingId = Long.parseLong(String.valueOf(body.get("bookingId")));
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        CurrentUser.requireSelfOrAdmin(booking.getCustomerId());
         if (!isHoldActive(booking)) {
             return ResponseEntity.status(409).body(Map.of("error", HOLD_EXPIRED_MESSAGE));
         }
@@ -230,6 +233,9 @@ public class BookingPaymentController {
     @PostMapping("/payments/simulate-webhook/{orderCode}")
     @Transactional
     public ResponseEntity<?> simulatePayosWebhook(@PathVariable Long orderCode) {
+        paymentRepository.findByPayosOrderCode(orderCode)
+                .flatMap(p -> bookingRepository.findById(p.getBookingId()))
+                .ifPresent(b -> CurrentUser.requireSelfOrAdmin(b.getCustomerId()));
         return confirmPayosOrder(orderCode, false);
     }
 
@@ -238,6 +244,7 @@ public class BookingPaymentController {
     public ResponseEntity<?> getPaymentStatus(@PathVariable Long orderCode) {
         Payment payment = paymentRepository.findByPayosOrderCode(orderCode).orElseThrow();
         Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+        CurrentUser.requireSelfOrAdmin(booking.getCustomerId());
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("orderCode", orderCode);
         res.put("status", payment.getStatus());
@@ -316,7 +323,7 @@ public class BookingPaymentController {
     @Transactional
     public ResponseEntity<?> payWithWallet(@RequestBody Map<String, Object> body) {
         Long bookingId = Long.parseLong(String.valueOf(body.get("bookingId")));
-        Long userId = Long.parseLong(String.valueOf(body.get("userId")));
+        Long userId = CurrentUser.idOr(body.get("userId"));
 
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         User user = userRepository.findById(userId).orElseThrow();
@@ -382,10 +389,7 @@ public class BookingPaymentController {
     public ResponseEntity<?> releaseHeldBooking(@PathVariable Long id,
                                                 @RequestBody(required = false) Map<String, Object> body) {
         Booking b = bookingRepository.findById(id).orElseThrow();
-        Object requester = body != null ? body.get("customerId") : null;
-        if (requester != null && !String.valueOf(requester).equals(String.valueOf(b.getCustomerId()))) {
-            return ResponseEntity.status(403).body(Map.of("error", "Vé này không thuộc tài khoản của bạn."));
-        }
+        CurrentUser.requireSelfOrAdmin(b.getCustomerId());
         if (List.of("CONFIRMED", "CHECKED_IN", "COMPLETED").contains(b.getStatus())) {
             return ResponseEntity.status(409).body(Map.of("error", "Vé đã thanh toán, hãy dùng chức năng Hủy vé để được hoàn tiền."));
         }
@@ -404,11 +408,13 @@ public class BookingPaymentController {
 
     @GetMapping("/bookings/customer/{customerId}")
     public List<Booking> getCustomerBookings(@PathVariable Long customerId) {
+        CurrentUser.requireSelfOrAdmin(customerId);
         return bookingRepository.findByCustomerIdOrderByIdDesc(customerId);
     }
 
     @GetMapping("/bookings/{id}")
     public ResponseEntity<?> getBookingDetail(@PathVariable Long id) {
+        bookingRepository.findById(id).ifPresent(this::requireBookingAccess);
         return bookingRepository.findById(id).map(b -> {
             Map<String, Object> res = new LinkedHashMap<>();
             res.put("booking", b);
@@ -423,6 +429,7 @@ public class BookingPaymentController {
     @Transactional
     public ResponseEntity<?> rescheduleBooking(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Booking b = bookingRepository.findById(id).orElseThrow();
+        CurrentUser.requireSelfOrAdmin(b.getCustomerId());
         if (!"CONFIRMED".equals(b.getStatus())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Chỉ vé đã thanh toán và chưa sử dụng mới được đổi lịch."));
         }
@@ -509,6 +516,7 @@ public class BookingPaymentController {
     @Transactional
     public ResponseEntity<?> cancelAndRefundBooking(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Booking b = bookingRepository.findById(id).orElseThrow();
+        CurrentUser.requireSelfOrAdmin(b.getCustomerId());
         if ("CANCELLED".equals(b.getStatus())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Vé đặt sân này đã được hủy trước đó."));
         }
@@ -599,12 +607,18 @@ public class BookingPaymentController {
                 ? 0.0
                 : Double.parseDouble(String.valueOf(body.getOrDefault("totalPrice", 200000)));
 
+        Venue venue = venueRepository.findById(venueId).orElseThrow();
+        Court court = courtRepository.findById(courtId).orElseThrow();
+        CurrentUser.requireAnyOf("Cơ sở này không thuộc tài khoản của bạn.", venue.getOwnerId());
+        if (!venueId.equals(court.getVenueId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Sân không thuộc cơ sở này."));
+        }
+        if (!List.of("WALK_IN", "MAINTENANCE").contains(bookingType)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Loại lịch không hợp lệ."));
+        }
         if (hasTimeConflict(courtId, playDate, startTime, endTime, null)) {
             return ResponseEntity.status(409).body(Map.of("error", "Khung giờ này đã có lịch đặt trước!"));
         }
-
-        Venue venue = venueRepository.findById(venueId).orElseThrow();
-        Court court = courtRepository.findById(courtId).orElseThrow();
         String code = ("MAINTENANCE".equals(bookingType) ? "MT-" : "WI-") + (System.currentTimeMillis() % 1000000);
 
         Booking b = new Booking();
@@ -642,6 +656,14 @@ public class BookingPaymentController {
         }
 
         Booking b = opt.get();
+        Long venueOwnerId = venueRepository.findById(b.getVenueId()).map(Venue::getOwnerId).orElse(null);
+        CurrentUser.requireAnyOf("Vé này không thuộc cơ sở của bạn.", venueOwnerId);
+        if ("CHECKED_IN".equals(b.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vé này đã check-in trước đó."));
+        }
+        if (!"CONFIRMED".equals(b.getStatus()) || "MAINTENANCE".equals(b.getBookingType())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vé chưa thanh toán, đã hủy hoặc không phải vé của khách."));
+        }
         b.setStatus("CHECKED_IN");
         bookingRepository.save(b);
 
@@ -676,6 +698,12 @@ public class BookingPaymentController {
             }
         }
         return false;
+    }
+
+    /** Xem vé: khách đặt vé, chủ sân của cơ sở hoặc Admin. */
+    private void requireBookingAccess(Booking b) {
+        Long venueOwnerId = venueRepository.findById(b.getVenueId()).map(Venue::getOwnerId).orElse(null);
+        CurrentUser.requireAnyOf("Bạn không có quyền xem vé này.", b.getCustomerId(), venueOwnerId);
     }
 
     private static final int PEAK_START_HOUR = 17;

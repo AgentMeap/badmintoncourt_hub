@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/auth/google_auth_service.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -8,6 +9,8 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // Giao diện theo design system (skill ui-ux-pro-max): logo vector thay emoji,
 // form hỗ trợ trình quản lý mật khẩu (autofill), hiện/ẩn mật khẩu,
 // khối chuyển nhanh 3 vai trò demo dạng ô icon + nhãn.
+// Đăng nhập Google (Android): Google -> Firebase Auth -> Firebase ID token -> POST /auth/google
+// -> máy chủ kiểm tra token, tạo / tìm tài khoản và cấp JWT của app.
 class S01LoginScreen extends StatefulWidget {
   final AppState appState;
   const S01LoginScreen({super.key, required this.appState});
@@ -20,6 +23,7 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
   final _emailCtrl = TextEditingController(text: 'customer@badminton.vn');
   final _passCtrl = TextEditingController(text: '123456');
   bool _loading = false;
+  bool _googleLoading = false;
   bool _obscure = true;
 
   @override
@@ -54,6 +58,39 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
     setState(() => _loading = false);
     widget.appState.resetTo(widget.appState.homeScreen);
     widget.appState.syncFromBackend();
+  }
+
+  Future<void> _handleGoogleLogin() async {
+    if (_loading || _googleLoading) return;
+    setState(() => _googleLoading = true);
+    try {
+      final idToken = await GoogleAuthService.signInAndGetIdToken();
+      if (idToken == null) {
+        // Người dùng đóng hộp chọn tài khoản
+        if (mounted) setState(() => _googleLoading = false);
+        return;
+      }
+      final res = await Repos.auth.loginWithGoogle(idToken);
+      await widget.appState.applyAuthResponse(res);
+      if (!mounted) return;
+      setState(() => _googleLoading = false);
+      if (res['newUser'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tạo tài khoản thành công, Ví được tặng 200.000đ.')),
+        );
+      }
+      widget.appState.resetTo(widget.appState.homeScreen);
+      widget.appState.syncFromBackend();
+    } catch (e) {
+      // Đăng nhập Google thành công nhưng máy chủ từ chối: thoát Google để lần sau chọn lại tài khoản
+      GoogleAuthService.signOut();
+      if (!mounted) return;
+      setState(() => _googleLoading = false);
+      final message = e is GoogleAuthException ? e.message : ApiException.messageOf(e);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   /// Đăng nhập nhanh tài khoản demo theo vai trò.
@@ -165,8 +202,40 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
             label: 'Đăng nhập',
             icon: Icons.login,
             loading: _loading,
-            onPressed: _handleLogin,
+            onPressed: _googleLoading ? null : _handleLogin,
           ),
+          if (GoogleAuthService.isSupportedPlatform) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('hoặc',
+                      style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ),
+                const Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: (_loading || _googleLoading) ? null : _handleGoogleLogin,
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                icon: _googleLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      )
+                    : const Icon(Icons.account_circle_outlined),
+                label: const Text('Tiếp tục với Google'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Wrap(
             alignment: WrapAlignment.center,

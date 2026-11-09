@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.EmailOtpService;
+import com.badminton.v2.security.CurrentUser;
 import com.badminton.v2.service.NotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,7 @@ public class AdminOwnerFinanceController {
     // S19 & S23: Owner Dashboard & Payout Summary
     @GetMapping("/owner/{ownerId}/dashboard")
     public ResponseEntity<?> getOwnerDashboard(@PathVariable Long ownerId) {
+        CurrentUser.requireSelfOrAdmin(ownerId);
         List<Venue> venues = venueRepository.findByOwnerIdOrderByIdDesc(ownerId);
         List<Long> venueIds = venues.stream().map(Venue::getId).toList();
 
@@ -92,20 +94,31 @@ public class AdminOwnerFinanceController {
     @PostMapping("/owner/payout-requests")
     @Transactional
     public ResponseEntity<?> createPayoutRequest(@RequestBody Map<String, Object> body) {
-        Long ownerId = Long.parseLong(String.valueOf(body.getOrDefault("ownerId", 2)));
+        Long ownerId = CurrentUser.idOr(body.getOrDefault("ownerId", 2));
         Long venueId = Long.parseLong(String.valueOf(body.getOrDefault("venueId", 1)));
         double grossAmount = Double.parseDouble(String.valueOf(body.getOrDefault("grossAmount", 2000000)));
         String bankName = String.valueOf(body.getOrDefault("bankName", "Vietcombank"));
         String bankAccountNumber = String.valueOf(body.getOrDefault("bankAccountNumber", "0071001234567"));
         String bankAccountHolder = String.valueOf(body.getOrDefault("bankAccountHolder", "NGUYEN CHU SAN"));
-        String otpCode = String.valueOf(body.getOrDefault("otpCode", "123456")).trim();
+        String otpCode = String.valueOf(body.getOrDefault("otpCode", "")).trim();
 
         User owner = userRepository.findById(ownerId).orElseThrow();
-        if (!emailOtpService.verifyOtp(owner.getEmail(), otpCode)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Mã bảo mật OTP không chính xác! Vui lòng kiểm tra Email hoặc nhập mã Demo 123456."));
+        Venue venue = venueRepository.findById(venueId).orElseThrow();
+        if (!ownerId.equals(venue.getOwnerId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Cơ sở này không thuộc tài khoản của bạn."));
+        }
+        if (grossAmount <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Số tiền giải ngân phải lớn hơn 0."));
+        }
+        double available = availablePayoutGross(ownerId);
+        if (grossAmount > available + 0.5) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Số tiền yêu cầu vượt doanh thu online chưa giải ngân (" + (long) available + "đ)."));
+        }
+        if (!emailOtpService.verifyOtp(owner.getEmail(), otpCode, "PAYOUT")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Mã bảo mật OTP không chính xác hoặc đã hết hạn."));
         }
 
-        Venue venue = venueRepository.findById(venueId).orElseThrow();
         double commissionFee = Math.round(grossAmount * 0.05);
         double netAmount = grossAmount - commissionFee;
 
@@ -134,6 +147,27 @@ public class AdminOwnerFinanceController {
                 pr.getId()
         );
         return ResponseEntity.ok(pr);
+    }
+
+    /**
+     * Doanh thu thanh toán online (PayOS / Ví) của chủ sân trừ phần đã gửi yêu cầu giải ngân
+     * (trừ yêu cầu bị từ chối). Tiền mặt khách vãng lai chủ sân đã thu tại quầy nên không tính.
+     */
+    private double availablePayoutGross(Long ownerId) {
+        double online = 0;
+        for (Venue v : venueRepository.findByOwnerIdOrderByIdDesc(ownerId)) {
+            for (Booking b : bookingRepository.findByVenueIdOrderByIdDesc(v.getId())) {
+                if (List.of("CONFIRMED", "CHECKED_IN", "COMPLETED").contains(b.getStatus())
+                        && List.of("PAYOS_QR", "WALLET").contains(b.getPaymentMethod())) {
+                    online += b.getTotalPrice();
+                }
+            }
+        }
+        double requested = payoutRequestRepository.findByOwnerIdOrderByIdDesc(ownerId).stream()
+                .filter(p -> !"REJECTED".equals(p.getStatus()))
+                .mapToDouble(PayoutRequest::getGrossAmount)
+                .sum();
+        return Math.max(0, online - requested);
     }
 
     // S24: Admin Platform Overview

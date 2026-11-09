@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'auth/google_auth_service.dart';
 import 'demo_seed.dart';
 import 'repositories/repositories.dart';
 
@@ -325,9 +326,19 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Gửi mã OTP tới email của tài khoản đang đăng nhập (rút ví WITHDRAW_WALLET, giải ngân PAYOUT)
+  /// rồi ghi lại để màn S03 biết đang xác thực cho việc gì. Lỗi -> ApiException.
+  Future<void> requestAccountOtp(String purpose) async {
+    final res = await Repos.auth.sendOtp(email, purpose);
+    lastOtpEmail = res['email']?.toString() ?? email;
+    lastOtpPurpose = purpose;
+    lastDemoOtp = res['demoOtp']?.toString() ?? '';
+  }
+
   /// Đăng xuất: xóa phiên + token, giữ lại cài đặt trên máy (sân yêu thích, lịch sử tìm kiếm).
   Future<void> logout() async {
     _releaseAbandonedHold('S01');
+    GoogleAuthService.signOut();
     ApiClient.instance.token = null;
     try {
       final sp = await SharedPreferences.getInstance();

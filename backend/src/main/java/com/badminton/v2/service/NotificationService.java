@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class NotificationService {
@@ -39,6 +40,10 @@ public class NotificationService {
 
     public long getUnreadCount(Long userId) {
         return notificationRepository.countByUserIdAndIsReadFalse(userId);
+    }
+
+    public Optional<NotificationItem> find(Long id) {
+        return notificationRepository.findById(id);
     }
 
     public NotificationItem markAsRead(Long id) {

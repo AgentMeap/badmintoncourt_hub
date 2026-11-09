@@ -129,3 +129,7 @@ Thumbs.db
 *.bak
 *.swp
 *~
+
+# Cấu hình Firebase của từng máy (xem mobile/config/README_FIREBASE.md)
+mobile/config/firebase.json
+mobile/android/app/google-services.json

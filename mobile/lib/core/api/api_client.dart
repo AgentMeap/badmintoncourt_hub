@@ -75,6 +75,15 @@ class ApiClient {
   Future<dynamic> delete(String path, {Map<String, Object?>? query}) =>
       send('DELETE', path, query: query);
 
+  static const _publicAuthPaths = {
+    '/auth/login',
+    '/auth/register',
+    '/auth/google',
+    '/auth/send-otp',
+    '/auth/verify-otp',
+    '/auth/reset-password',
+  };
+
   /// Gửi request và trả về JSON đã giải mã (Map / List / null khi thân rỗng).
   Future<dynamic> send(
     String method,
@@ -105,7 +114,9 @@ class ApiClient {
     }
 
     final decoded = _decode(response, strict: false);
-    if (status == 401 && sentWithToken && !path.startsWith('/auth/')) {
+    // 401 ở API cần đăng nhập = token hết hạn / bị thu hồi -> đăng xuất.
+    // 401 ở API đăng nhập (sai mật khẩu, token Google sai) chỉ là báo lỗi.
+    if (status == 401 && sentWithToken && !_publicAuthPaths.contains(path)) {
       onUnauthorized?.call();
     }
     throw ApiException.fromStatus(status, _errorMessageOf(decoded));

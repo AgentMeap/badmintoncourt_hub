@@ -7,6 +7,10 @@ import com.badminton.v2.repository.UserRepository;
 import com.badminton.v2.repository.WalletTransactionRepository;
 import com.badminton.v2.service.EmailOtpService;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.security.AuthUser;
+import com.badminton.v2.security.CurrentUser;
+import com.badminton.v2.security.FirebaseTokenVerifier;
+import com.badminton.v2.security.JwtService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,18 +29,106 @@ public class AuthController {
     private final EmailOtpService emailOtpService;
     private final NotificationService notificationService;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final FirebaseTokenVerifier firebaseTokenVerifier;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public AuthController(UserRepository userRepository,
                           WalletTransactionRepository walletTransactionRepository,
                           EmailOtpService emailOtpService,
                           NotificationService notificationService,
-                          PasswordEncoder passwordEncoder) {
+                          PasswordEncoder passwordEncoder,
+                          JwtService jwtService,
+                          FirebaseTokenVerifier firebaseTokenVerifier) {
         this.userRepository = userRepository;
         this.walletTransactionRepository = walletTransactionRepository;
         this.emailOtpService = emailOtpService;
         this.notificationService = notificationService;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.firebaseTokenVerifier = firebaseTokenVerifier;
+    }
+
+    /** Mục đích OTP cần đăng nhập: mã luôn gửi tới email của chính tài khoản. */
+    private static final Set<String> ACCOUNT_OTP_PURPOSES = Set.of("WITHDRAW_WALLET", "PAYOUT");
+    private static final Set<String> OTP_PURPOSES = Set.of("REGISTER", "RESET_PASSWORD", "WITHDRAW_WALLET", "PAYOUT");
+
+    /** Mật khẩu demo "123456" chỉ được chấp nhận khi bật app.demo-mode. */
+    private boolean isDemoPassword(String password) {
+        return emailOtpService.isDemoMode() && EmailOtpService.DEMO_OTP.equals(password);
+    }
+
+    // Đăng nhập Google qua Firebase: app gửi Firebase ID token, máy chủ kiểm tra rồi cấp JWT riêng
+    @PostMapping("/google")
+    @Transactional
+    public ResponseEntity<?> loginWithGoogle(@RequestBody Map<String, String> body) {
+        if (!firebaseTokenVerifier.isConfigured()) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "error", "Máy chủ chưa cấu hình đăng nhập Google (thiếu FIREBASE_PROJECT_ID)."));
+        }
+        FirebaseTokenVerifier.FirebaseUser firebaseUser;
+        try {
+            firebaseUser = firebaseTokenVerifier.verify(body.getOrDefault("idToken", ""));
+        } catch (FirebaseTokenVerifier.InvalidTokenException e) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."));
+        }
+        if (firebaseUser.email() == null || !firebaseUser.emailVerified()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Tài khoản Google chưa có email đã xác thực."));
+        }
+
+        boolean created = false;
+        User user;
+        Optional<User> existing = userRepository.findByEmailIgnoreCase(firebaseUser.email());
+        if (existing.isPresent()) {
+            user = existing.get();
+            if (!user.isActive()) {
+                return ResponseEntity.status(403).body(Map.of("error", "Tài khoản đã bị khóa bởi Quản trị viên"));
+            }
+            if (!user.isVerified()) {
+                // Google đã xác thực email nên không cần OTP nữa
+                user.setVerified(true);
+                user = userRepository.save(user);
+            }
+        } else {
+            String name = firebaseUser.name() != null && !firebaseUser.name().isBlank()
+                    ? firebaseUser.name()
+                    : firebaseUser.email().split("@")[0];
+            user = userRepository.save(new User(
+                    name,
+                    firebaseUser.email(),
+                    "",
+                    // Tài khoản Google không có mật khẩu đăng nhập; đặt chuỗi ngẫu nhiên không đoán được
+                    passwordEncoder.encode(UUID.randomUUID().toString()),
+                    "CUSTOMER",
+                    "TB_YEU",
+                    200000.0,
+                    true,
+                    true,
+                    LocalDateTime.now().format(FMT)
+            ));
+            walletTransactionRepository.save(new WalletTransaction(
+                    user.getId(),
+                    "Thưởng chào mừng thành viên mới",
+                    200000.0,
+                    "TOPUP",
+                    200000.0,
+                    LocalDateTime.now().format(FMT)
+            ));
+            notificationService.notifyUser(
+                    user.getId(),
+                    "Chào mừng bạn đến với Badminton Hub!",
+                    "Bạn đã đăng nhập bằng Google. Ví Cầu Lông được tặng sẵn 200.000đ để trải nghiệm đặt sân & tìm kèo.",
+                    "SYSTEM",
+                    "S18",
+                    user.getId()
+            );
+            created = true;
+        }
+
+        Map<String, Object> res = buildAuthResponse(user);
+        res.put("newUser", created);
+        return ResponseEntity.ok(res);
     }
 
     @PostMapping("/login")
@@ -52,7 +144,7 @@ public class AuthController {
         if (!user.isActive()) {
             return ResponseEntity.status(403).body(Map.of("error", "Tài khoản đã bị khóa bởi Quản trị viên"));
         }
-        if (!passwordEncoder.matches(password, user.getPasswordHash()) && !"123456".equals(password)) {
+        if (!passwordEncoder.matches(password, user.getPasswordHash()) && !isDemoPassword(password)) {
             return ResponseEntity.status(401).body(Map.of("error", "Mật khẩu không chính xác"));
         }
 
@@ -109,27 +201,42 @@ public class AuthController {
                 user.getId()
         );
 
-        Map<String, Object> res = buildAuthResponse(user);
-        res.put("demoOtp", otp.getOtpCode());
-        res.put("message", "Mã OTP 6 số đã được gửi tới Email " + email + " (Mã Demo: " + otp.getOtpCode() + ")");
+        // Chưa xác thực email nên KHÔNG trả token đăng nhập; token cấp sau bước verify-otp
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("id", user.getId());
+        res.put("email", user.getEmail());
+        res.put("verified", false);
+        res.put("message", "Mã OTP 6 số đã được gửi tới Email " + email);
+        if (emailOtpService.isDemoMode()) res.put("demoOtp", otp.getOtpCode());
         return ResponseEntity.ok(res);
     }
 
     @PostMapping("/send-otp")
     public ResponseEntity<?> sendOtp(@RequestBody Map<String, String> body) {
         String email = body.getOrDefault("email", "").trim().toLowerCase();
-        String purpose = body.getOrDefault("purpose", "REGISTER").toUpperCase();
+        String purpose = body.getOrDefault("purpose", "REGISTER").trim().toUpperCase();
+        if (!OTP_PURPOSES.contains(purpose)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Mục đích OTP không hợp lệ"));
+        }
+        if (ACCOUNT_OTP_PURPOSES.contains(purpose)) {
+            // Rút ví / giải ngân: phải đăng nhập, mã gửi tới email của chính tài khoản (bỏ qua email gửi lên)
+            Optional<AuthUser> current = CurrentUser.get();
+            if (current.isEmpty()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Vui lòng đăng nhập để nhận mã xác thực."));
+            }
+            email = current.get().email().trim().toLowerCase();
+        }
         if (email.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng nhập Email"));
         }
         OtpToken otp = emailOtpService.generateAndSendOtp(email, purpose);
-        return ResponseEntity.ok(Map.of(
-                "email", email,
-                "purpose", purpose,
-                "demoOtp", otp.getOtpCode(),
-                "expiresAt", otp.getExpiresAt(),
-                "message", "Đã gửi mã OTP 6 chữ số qua Email " + email + " (Mã Demo: " + otp.getOtpCode() + ")"
-        ));
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("email", email);
+        res.put("purpose", purpose);
+        res.put("expiresAt", otp.getExpiresAt());
+        res.put("message", "Đã gửi mã OTP 6 chữ số qua Email " + email);
+        if (emailOtpService.isDemoMode()) res.put("demoOtp", otp.getOtpCode());
+        return ResponseEntity.ok(res);
     }
 
     @PostMapping("/verify-otp")
@@ -138,7 +245,9 @@ public class AuthController {
         String email = body.getOrDefault("email", "").trim().toLowerCase();
         String otpCode = body.getOrDefault("otpCode", "").trim();
 
-        boolean valid = emailOtpService.verifyOtp(email, otpCode);
+        // Endpoint này chỉ xác thực email khi đăng ký; rút ví / giải ngân / quên mật khẩu
+        // tự kiểm tra OTP trong API của chúng
+        boolean valid = emailOtpService.verifyOtp(email, otpCode, "REGISTER");
         if (!valid) {
             return ResponseEntity.badRequest().body(Map.of("error", "Mã OTP không chính xác hoặc đã hết hạn (5 phút)"));
         }
@@ -153,7 +262,7 @@ public class AuthController {
             res.put("message", "Xác thực mã OTP thành công!");
             return ResponseEntity.ok(res);
         }
-        return ResponseEntity.ok(Map.of("verified", true, "message", "Xác thực OTP thành công"));
+        return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy tài khoản với Email này"));
     }
 
     @PostMapping("/reset-password")
@@ -161,9 +270,12 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body) {
         String email = body.getOrDefault("email", "").trim().toLowerCase();
         String otpCode = body.getOrDefault("otpCode", "").trim();
-        String newPassword = body.getOrDefault("newPassword", "123456");
+        String newPassword = body.getOrDefault("newPassword", "");
+        if (newPassword.length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Mật khẩu mới phải có ít nhất 6 ký tự!"));
+        }
 
-        if (!emailOtpService.verifyOtp(email, otpCode)) {
+        if (!emailOtpService.verifyOtp(email, otpCode, "RESET_PASSWORD")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Mã OTP không hợp lệ hoặc đã hết hạn"));
         }
 
@@ -189,6 +301,7 @@ public class AuthController {
 
     @GetMapping("/profile/{userId}")
     public ResponseEntity<?> getProfile(@PathVariable Long userId) {
+        CurrentUser.requireSelfOrAdmin(userId);
         return userRepository.findById(userId).map(u -> {
             Map<String, Object> res = buildAuthResponse(u);
             res.put("walletTransactions", walletTransactionRepository.findByUserIdOrderByIdDesc(userId));
@@ -199,6 +312,7 @@ public class AuthController {
     @PatchMapping("/profile/{userId}")
     @Transactional
     public ResponseEntity<?> updateProfile(@PathVariable Long userId, @RequestBody Map<String, String> body) {
+        CurrentUser.requireSelfOrAdmin(userId);
         return userRepository.findById(userId).map(u -> {
             if (body.containsKey("fullName")) u.setFullName(body.get("fullName"));
             if (body.containsKey("phone")) u.setPhone(body.get("phone"));
@@ -212,7 +326,7 @@ public class AuthController {
     @PostMapping("/change-password")
     @Transactional
     public ResponseEntity<?> changePassword(@RequestBody Map<String, Object> body) {
-        Long userId = Long.parseLong(String.valueOf(body.get("userId")));
+        Long userId = CurrentUser.idOr(body.get("userId"));
         String currentPassword = String.valueOf(body.getOrDefault("currentPassword", ""));
         String newPassword = String.valueOf(body.getOrDefault("newPassword", ""));
 
@@ -220,7 +334,7 @@ public class AuthController {
         if (opt.isEmpty()) return ResponseEntity.notFound().build();
         User u = opt.get();
 
-        if (!passwordEncoder.matches(currentPassword, u.getPasswordHash()) && !"123456".equals(currentPassword)) {
+        if (!passwordEncoder.matches(currentPassword, u.getPasswordHash()) && !isDemoPassword(currentPassword)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Mật khẩu hiện tại không chính xác!"));
         }
         if (newPassword.length() < 6) {
@@ -243,7 +357,11 @@ public class AuthController {
     @PostMapping("/wallet/{userId}/topup")
     @Transactional
     public ResponseEntity<?> topUpWallet(@PathVariable Long userId, @RequestBody Map<String, Object> body) {
+        CurrentUser.requireSelfOrAdmin(userId);
         double amount = Double.parseDouble(String.valueOf(body.getOrDefault("amount", 100000)));
+        if (amount <= 0 || amount > 10_000_000) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Số tiền nạp phải từ 1đ đến 10.000.000đ."));
+        }
         return userRepository.findById(userId).map(u -> {
             u.setWalletBalance(u.getWalletBalance() + amount);
             userRepository.save(u);
@@ -266,7 +384,7 @@ public class AuthController {
 
     private Map<String, Object> buildAuthResponse(User user) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("token", "jwt-badminton-v2-uid-" + user.getId() + "-" + user.getRole());
+        map.put("token", jwtService.issue(user));
         map.put("id", user.getId());
         map.put("fullName", user.getFullName());
         map.put("email", user.getEmail());

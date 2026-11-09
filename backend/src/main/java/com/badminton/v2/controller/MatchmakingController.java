@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.security.CurrentUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -56,7 +57,7 @@ public class MatchmakingController {
     @PostMapping
     @Transactional
     public ResponseEntity<?> createMatchPost(@RequestBody Map<String, Object> body) {
-        Long hostId = Long.parseLong(String.valueOf(body.getOrDefault("hostId", 1)));
+        Long hostId = CurrentUser.idOr(body.getOrDefault("hostId", 1));
         Long venueId = Long.parseLong(String.valueOf(body.getOrDefault("venueId", 1)));
         Long bookingId = body.get("bookingId") != null ? Long.parseLong(String.valueOf(body.get("bookingId"))) : null;
 
@@ -93,8 +94,11 @@ public class MatchmakingController {
     @PostMapping("/{matchId}/join")
     @Transactional
     public ResponseEntity<?> requestJoinMatch(@PathVariable Long matchId, @RequestBody Map<String, Object> body) {
-        Long userId = Long.parseLong(String.valueOf(body.get("userId")));
+        Long userId = CurrentUser.idOr(body.get("userId"));
         MatchPost post = matchPostRepository.findById(matchId).orElseThrow();
+        if (userId.equals(post.getHostId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Bạn là chủ kèo này."));
+        }
         User user = userRepository.findById(userId).orElseThrow();
 
         if (matchParticipantRepository.findByMatchIdAndUserId(matchId, userId).isPresent()) {
@@ -133,6 +137,17 @@ public class MatchmakingController {
         String decision = body.getOrDefault("status", "APPROVED").toUpperCase();
         MatchPost post = matchPostRepository.findById(matchId).orElseThrow();
         MatchParticipant mp = matchParticipantRepository.findById(participantId).orElseThrow();
+        // Chỉ chủ kèo được duyệt / từ chối người xin vào
+        CurrentUser.requireSelfOrAdmin(post.getHostId());
+        if (!matchId.equals(mp.getMatchId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Người tham gia không thuộc kèo này."));
+        }
+        if (!List.of("APPROVED", "REJECTED").contains(decision)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Trạng thái duyệt không hợp lệ."));
+        }
+        if ("APPROVED".equals(decision) && post.getCurrentPlayers() >= post.getMaxPlayers()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Kèo đã đủ người."));
+        }
 
         mp.setStatus(decision);
         matchParticipantRepository.save(mp);

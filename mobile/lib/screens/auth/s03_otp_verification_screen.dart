@@ -79,13 +79,13 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
     }
   }
 
-  /// Rút tiền Ví (từ S27): máy chủ kiểm tra số dư, trừ ví và ghi giao dịch.
+  /// Rút tiền Ví (từ S27): máy chủ kiểm tra OTP, số dư, trừ ví và ghi giao dịch trong một bước.
   Future<void> _withdraw(String code, Map<String, dynamic> w) async {
     final app = widget.appState;
-    await Repos.auth.verifyOtp(app.lastOtpEmail, code);
     final amount = asNum(w['amount']) ?? 0;
     final res = await Repos.wallet.withdraw(
       userId: app.userId,
+      otpCode: code,
       amount: amount,
       bankName: '${w['bankName']}',
       bankAccountNumber: '${w['bankAccountNumber']}',
@@ -165,7 +165,7 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
   /// Xác thực email sau đăng ký: máy chủ trả về phiên đăng nhập của tài khoản mới.
   Future<void> _verifyAccount(String code) async {
     final app = widget.appState;
-    final res = await Repos.auth.verifyOtp(app.lastOtpEmail, code);
+    final res = await Repos.auth.verifyRegistrationOtp(app.lastOtpEmail, code);
     if (res['id'] != null) await app.applyAuthResponse(res);
     if (!mounted) return;
     app.pushNotification(
@@ -247,8 +247,10 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
           ),
           const SizedBox(height: 8),
           NoteBox(
-            'Mã có hiệu lực trong 5 phút. Bạn có thể dán mã trực tiếp vào ô trên. '
-            '(Mã demo: ${widget.appState.lastDemoOtp})',
+            'Mã có hiệu lực trong 5 phút, sai quá 5 lần cần gửi mã mới. '
+            'Bạn có thể dán mã trực tiếp vào ô trên.'
+            // Máy chủ chỉ trả mã demo khi bật chế độ demo (APP_DEMO_MODE)
+            '${widget.appState.lastDemoOtp.isEmpty ? '' : ' (Mã demo: ${widget.appState.lastDemoOtp})'}',
             icon: Icons.timer_outlined,
           ),
           const SizedBox(height: 24),

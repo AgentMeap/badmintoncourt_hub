@@ -10,7 +10,13 @@ class AuthRepository {
   Future<Json> login(String email, String password) async =>
       asJson(await _api.post('/auth/login', {'email': email, 'password': password}));
 
-  /// Tạo tài khoản và gửi OTP xác thực email. Trả về hồ sơ + demoOtp.
+  /// Đăng nhập bằng Firebase ID token (sau khi chọn tài khoản Google). Trả về phiên như [login]
+  /// kèm `newUser` = true nếu tài khoản vừa được tạo.
+  Future<Json> loginWithGoogle(String firebaseIdToken) async =>
+      asJson(await _api.post('/auth/google', {'idToken': firebaseIdToken}));
+
+  /// Tạo tài khoản và gửi OTP xác thực email. Trả về id, email (+ demoOtp khi máy chủ bật chế độ demo).
+  /// Chưa có token đăng nhập cho tới khi xác thực OTP.
   Future<Json> register({
     required String fullName,
     required String email,
@@ -28,11 +34,12 @@ class AuthRepository {
         'skillLevel': skillLevel,
       }));
 
+  /// Gửi mã OTP. Với WITHDRAW_WALLET / PAYOUT máy chủ gửi tới email của tài khoản đang đăng nhập.
   Future<Json> sendOtp(String email, String purpose) async =>
       asJson(await _api.post('/auth/send-otp', {'email': email, 'purpose': purpose}));
 
-  /// Hợp lệ: trả về hồ sơ người dùng (có token). Sai mã: ném ApiException 400.
-  Future<Json> verifyOtp(String email, String otpCode) async =>
+  /// Xác thực email sau đăng ký. Hợp lệ: trả về phiên đăng nhập (có token). Sai mã: ApiException 400.
+  Future<Json> verifyRegistrationOtp(String email, String otpCode) async =>
       asJson(await _api.post('/auth/verify-otp', {'email': email, 'otpCode': otpCode}));
 
   Future<Json> resetPassword({

@@ -6,9 +6,11 @@ class WalletRepository {
   WalletRepository([ApiClient? api]) : _api = api ?? ApiClient.instance;
   final ApiClient _api;
 
-  /// Rút tiền về ngân hàng. Không đủ số dư -> ApiException 400.
+  /// Rút tiền về ngân hàng, kèm mã OTP (mục đích WITHDRAW_WALLET) đã gửi tới email.
+  /// Sai OTP / không đủ số dư -> ApiException 400.
   Future<Json> withdraw({
     required int userId,
+    required String otpCode,
     required num amount,
     required String bankName,
     required String bankAccountNumber,
@@ -20,6 +22,7 @@ class WalletRepository {
         'bankName': bankName,
         'bankAccountNumber': bankAccountNumber,
         'bankAccountHolder': bankAccountHolder,
+        'otpCode': otpCode,
       }));
 }
 

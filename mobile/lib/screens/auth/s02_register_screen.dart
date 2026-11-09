@@ -83,7 +83,8 @@ class _S02RegisterScreenState extends State<S02RegisterScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Đã gửi mã OTP tới ${_emailCtrl.text} (mã demo: ${widget.appState.lastDemoOtp})',
+          'Đã gửi mã OTP tới ${_emailCtrl.text}'
+          '${widget.appState.lastDemoOtp.isEmpty ? '' : ' (mã demo: ${widget.appState.lastDemoOtp})'}',
         ),
       ),
     );

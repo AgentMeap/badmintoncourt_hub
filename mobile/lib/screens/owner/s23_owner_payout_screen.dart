@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -21,6 +22,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
   final _bankNameCtrl = TextEditingController(text: 'Vietcombank');
   final _bankNoCtrl = TextEditingController(text: '0071001234567');
   final _holderCtrl = TextEditingController(text: 'TRAN CHU SAN');
+  bool _sendingOtp = false;
 
   AppState get _app => widget.appState;
 
@@ -32,8 +34,8 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
     super.dispose();
   }
 
-  void _requestPayoutWithOtp(List<Map<String, dynamic>> items, num gross) {
-    if (items.isEmpty || gross <= 0) return;
+  Future<void> _requestPayoutWithOtp(List<Map<String, dynamic>> items, num gross) async {
+    if (items.isEmpty || gross <= 0 || _sendingOtp) return;
     if (_bankNameCtrl.text.trim().isEmpty || _bankNoCtrl.text.trim().length < 6 || _holderCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập đủ thông tin tài khoản ngân hàng.')),
@@ -42,9 +44,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
     }
     final venueNames = {for (final b in items) '${b['venueName']}'};
     final stamp = DateTime.now().millisecondsSinceEpoch % 10000;
-    _app.lastOtpEmail = _app.email;
-    _app.lastOtpPurpose = 'PAYOUT';
-    _app.pendingPayoutDraft = {
+    final draft = <String, dynamic>{
       'id': stamp,
       'payoutCode': 'PO-$stamp',
       'venueId': items.first['venueId'],
@@ -60,6 +60,19 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
       'status': 'PENDING',
       'createdAt': 'Vừa xong',
     };
+    // Máy chủ gửi OTP tới email của tài khoản chủ sân; S03 gửi yêu cầu kèm mã
+    setState(() => _sendingOtp = true);
+    try {
+      await _app.requestAccountOtp('PAYOUT');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sendingOtp = false);
+      showApiError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _sendingOtp = false);
+    _app.pendingPayoutDraft = draft;
     _app.goTo('S03');
   }
 
@@ -162,7 +175,8 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
             PrimaryButton(
               label: 'Yêu cầu giải ngân ${UiFmt.vnd(net)}',
               icon: Icons.send_outlined,
-              onPressed: () => _requestPayoutWithOtp(items, gross),
+              loading: _sendingOtp,
+              onPressed: _sendingOtp ? null : () => _requestPayoutWithOtp(items, gross),
             ),
           ],
           const SizedBox(height: 24),

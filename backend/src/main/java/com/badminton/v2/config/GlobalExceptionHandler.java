@@ -11,6 +11,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import com.badminton.v2.security.ForbiddenException;
+import com.badminton.v2.security.UnauthorizedException;
 
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -28,6 +30,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NoSuchElementException ex) {
         return error(HttpStatus.NOT_FOUND, "Không tìm thấy dữ liệu yêu cầu.");
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenException ex) {
+        return error(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, String>> handleUnauthorized(UnauthorizedException ex) {
+        return error(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     /** Thiếu trường / sai kiểu số (VD Long.parseLong("null")), JSON hỏng, sai tham số URL. */

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S27: Rút tiền từ Ví Cầu Lông về ngân hàng
 // Sửa lỗi luồng: trước đây nút "Rút tiền" ở S18 nhảy thẳng vào OTP mà không hỏi
 // rút bao nhiêu, về tài khoản nào. Giờ: nhập số tiền + tài khoản -> kiểm tra hợp lệ
-// -> xác thực OTP (S03) -> S03 trừ ví, ghi lịch sử giao dịch.
+// -> máy chủ gửi OTP tới email tài khoản -> S03 gửi lệnh rút kèm mã OTP, máy chủ trừ ví.
 class S27WalletWithdrawScreen extends StatefulWidget {
   final AppState appState;
   const S27WalletWithdrawScreen({super.key, required this.appState});
@@ -24,6 +25,7 @@ class _S27WalletWithdrawScreenState extends State<S27WalletWithdrawScreen> {
   final _bankNameCtrl = TextEditingController(text: 'Vietcombank');
   final _bankNoCtrl = TextEditingController();
   final _holderCtrl = TextEditingController();
+  bool _sendingOtp = false;
 
   AppState get _app => widget.appState;
 
@@ -68,8 +70,8 @@ class _S27WalletWithdrawScreenState extends State<S27WalletWithdrawScreen> {
     setState(() {});
   }
 
-  void _continueToOtp() {
-    if (!_valid) return;
+  Future<void> _continueToOtp() async {
+    if (!_valid || _sendingOtp) return;
     _app.pendingWithdrawDraft = {
       'code': 'WD-${DateTime.now().millisecondsSinceEpoch % 100000}',
       'amount': _amount.toDouble(),
@@ -77,8 +79,18 @@ class _S27WalletWithdrawScreenState extends State<S27WalletWithdrawScreen> {
       'bankAccountNumber': _bankNoCtrl.text.trim(),
       'bankAccountHolder': _holderCtrl.text.trim().toUpperCase(),
     };
-    _app.lastOtpEmail = _app.email;
-    _app.lastOtpPurpose = 'WITHDRAW_WALLET';
+    setState(() => _sendingOtp = true);
+    try {
+      await _app.requestAccountOtp('WITHDRAW_WALLET');
+    } catch (e) {
+      _app.pendingWithdrawDraft = null;
+      if (!mounted) return;
+      setState(() => _sendingOtp = false);
+      showApiError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _sendingOtp = false);
     _app.goTo('S03');
   }
 
@@ -240,7 +252,7 @@ class _S27WalletWithdrawScreenState extends State<S27WalletWithdrawScreen> {
               ],
             ),
             action: FilledButton.icon(
-              onPressed: _valid ? _continueToOtp : null,
+              onPressed: (_valid && !_sendingOtp) ? _continueToOtp : null,
               style: FilledButton.styleFrom(
                 minimumSize: const Size(0, 52),
                 padding: const EdgeInsets.symmetric(horizontal: 20),

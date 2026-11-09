@@ -14,6 +14,8 @@ public class OtpToken {
     private String purpose; // REGISTER, RESET_PASSWORD, PAYOUT
     private String expiresAt;
     private boolean isUsed;
+    /** Số lần nhập sai mã này (null = 0). Nullable để SQLite thêm được cột vào bảng cũ. */
+    private Integer failedAttempts;
 
     public OtpToken() {}
 
@@ -37,4 +39,6 @@ public class OtpToken {
     public void setExpiresAt(String expiresAt) { this.expiresAt = expiresAt; }
     public boolean isUsed() { return isUsed; }
     public void setUsed(boolean used) { isUsed = used; }
+    public int getFailedAttempts() { return failedAttempts == null ? 0 : failedAttempts; }
+    public void setFailedAttempts(int failedAttempts) { this.failedAttempts = failedAttempts; }
 }

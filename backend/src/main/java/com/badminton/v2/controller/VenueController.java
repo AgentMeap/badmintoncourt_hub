@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.security.CurrentUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -121,13 +122,14 @@ public class VenueController {
 
     @GetMapping("/owner/{ownerId}")
     public List<Venue> getOwnerVenues(@PathVariable Long ownerId) {
+        CurrentUser.requireSelfOrAdmin(ownerId);
         return venueRepository.findByOwnerIdOrderByIdDesc(ownerId);
     }
 
     @PostMapping("/owner")
     @Transactional
     public ResponseEntity<?> createOwnerVenue(@RequestBody Map<String, Object> body) {
-        Long ownerId = Long.parseLong(String.valueOf(body.getOrDefault("ownerId", 2)));
+        Long ownerId = CurrentUser.idOr(body.getOrDefault("ownerId", 2));
         String ownerName = userRepository.findById(ownerId).map(User::getFullName).orElse("Chủ sân");
         String name = String.valueOf(body.getOrDefault("name", "Sân Cầu Lông Mới"));
         String address = String.valueOf(body.getOrDefault("address", "TP. Hồ Chí Minh"));
