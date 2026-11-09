@@ -28,8 +28,13 @@ class ApiClient {
   /// Gọi khi một request có token bị trả 401 (token hết hạn / bị thu hồi).
   VoidCallback? onUnauthorized;
 
+  /// Ghi đè địa chỉ API khi chạy trên điện thoại thật:
+  /// `flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8080/api`
+  static const _apiBaseOverride = String.fromEnvironment('API_BASE_URL');
+
   /// Địa chỉ API. Android emulator truy cập máy tính qua 10.0.2.2.
   static String get baseUrl {
+    if (_apiBaseOverride.isNotEmpty) return _apiBaseOverride;
     if (kIsWeb) return 'http://localhost:8080/api';
     if (defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:8080/api';
