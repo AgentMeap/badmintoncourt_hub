@@ -99,39 +99,47 @@ void main() {
     const Size(1280, 800),  // Web/Desktop & Tablet Landscape
   ];
 
-  final allScreens = [
-    'S01', 'S02', 'S03', 'S04', 'S05',
-    'S06', 'S07', 'S08', 'S09', 'S10',
-    'S11', 'S12', 'S13', 'S14',
-    'S15', 'S16', 'S17', 'S18',
-    'S19', 'S20', 'S21', 'S22',
-    'S23', 'S24', 'S25', 'S26',
-    'S27', 'S28', 'S29', 'S30',
-  ];
+  // Mỗi vai trò chỉ mở các màn của mình (S17 chỉ cho người chơi, S19-S23 chủ sân, S24-S26 Admin)
+  const screensByRole = {
+    'CUSTOMER': [
+      'S01', 'S02', 'S03', 'S04', 'S05',
+      'S06', 'S07', 'S08', 'S09', 'S10',
+      'S11', 'S12', 'S13', 'S14',
+      'S15', 'S16', 'S17', 'S18',
+      'S27', 'S28', 'S29', 'S30',
+    ],
+    'COURT_OWNER': ['S05', 'S19', 'S20', 'S21', 'S22', 'S23'],
+    'ADMIN': ['S05', 'S24', 'S25', 'S26'],
+  };
 
   for (final size in testSizes) {
-    testWidgets('Verify zero overflow at ${size.width.toInt()}x${size.height.toInt()} across all 30 screens',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    for (final entry in screensByRole.entries) {
+      testWidgets(
+          'Không tràn giao diện ở ${size.width.toInt()}x${size.height.toInt()} - ${entry.key} (${entry.value.length} màn)',
+          (WidgetTester tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      final appState = AppState();
-      await tester.pumpWidget(
-        BadmintonV2App(appState: appState),
-      );
-      await tester.pump();
-
-      for (final screen in allScreens) {
-        appState.goTo(screen);
+        final appState = AppState()..role = entry.key;
+        await tester.pumpWidget(BadmintonV2App(appState: appState));
         await tester.pump();
-        // Verify no FlutterError or overflow occurred during layout
-        expect(tester.takeException(), isNull,
-            reason: 'Overflow or layout exception on screen $screen at ${size.width.toInt()}x${size.height.toInt()}');
-      }
-    });
+
+        for (final screen in entry.value) {
+          appState.goTo(screen);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(tester.takeException(), isNull,
+              reason: 'Lỗi bố cục / tràn ở màn $screen (${entry.key}) kích thước ${size.width.toInt()}x${size.height.toInt()}');
+        }
+
+        // Dỡ cây widget và chạy hết các timer (SnackBar báo lỗi mạng, timeout API...) trước khi kết thúc test
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 15));
+      });
+    }
   }
 }

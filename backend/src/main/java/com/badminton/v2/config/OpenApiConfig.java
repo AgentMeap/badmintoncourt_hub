@@ -22,12 +22,15 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("Badminton V2 API")
                         .version("1.0.0")
-                        .description("Badminton Court Management Platform Backend (Spring Boot + SQLite)"))
+                        .description("Badminton Court Management Platform Backend (Spring Boot + SQLite). "
+                                + "Gọi POST /api/auth/login (VD customer@badminton.vn / 123456), "
+                                + "bấm Authorize và dán giá trị token để thử các API cần đăng nhập."))
                 .servers(List.of(new Server().url("/").description("Current server")))
                 .components(new Components().addSecuritySchemes(BEARER_AUTH,
                         new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)
-                                .scheme("bearer")))
+                                .scheme("bearer")
+                                .bearerFormat("JWT")))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_AUTH));
     }
 }

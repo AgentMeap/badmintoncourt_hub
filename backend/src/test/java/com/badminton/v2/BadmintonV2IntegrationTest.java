@@ -3,7 +3,6 @@ package com.badminton.v2;
 import com.badminton.v2.controller.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDate;
@@ -12,8 +11,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-class BadmintonV2IntegrationTest {
+/** Kịch bản xuyên suốt 6 module, gọi thẳng controller (chạy trên DB tạm của IntegrationTestBase). */
+class BadmintonV2IntegrationTest extends IntegrationTestBase {
 
     @Autowired
     private AuthController authController;

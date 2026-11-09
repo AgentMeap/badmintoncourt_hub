@@ -133,3 +133,6 @@ Thumbs.db
 # Cấu hình Firebase của từng máy (xem mobile/config/README_FIREBASE.md)
 mobile/config/firebase.json
 mobile/android/app/google-services.json
+
+# Thư mục tạm khi chuyển file (không commit)
+_tmp_*/

@@ -15,6 +15,7 @@
 6. [Kịch Bản 6 Module Kỹ Thuật (Checklist PRM393)](#6-kịch-bản-6-module-kỹ-thuật-checklist-prm393)
 7. [Bản Đồ 30 Màn Hình (`S01` -> `S30`) & 5 Luồng Nghiệp Vụ](#7-bản-đồ-30-màn-hình-s01---s30--5-luồng-nghiệp-vụ)
 8. [Kiểm Thử & Đảm Bảo Chất Lượng (Quality Assurance)](#8-kiểm-thử--đảm-bảo-chất-lượng-quality-assurance)
+9. [API REST & Biến Môi Trường](#9-api-rest--biến-môi-trường)
 
 ---
 
@@ -299,29 +300,75 @@ flowchart TD
 
 ## 8. Kiểm Thử & Đảm Bảo Chất Lượng (Quality Assurance)
 
-Dự án được cấu hình và kiểm thử tự động đạt tiêu chuẩn 100% trước khi nộp đồ án:
+### 8.1. CI tự động trên GitHub Actions
+File `.github/workflows/ci.yml` chạy mỗi lần **push** hoặc mở **Pull Request**:
 
-1. **Phân tích tĩnh Flutter (`flutter analyze`)**:
-   ```bash
-   cd mobile
-   flutter analyze
-   ```
-   *Kết quả: `No issues found!` (0 errors, 0 warnings).*
+| Job | Lệnh | Nội dung |
+| :--- | :--- | :--- |
+| **Backend** | `mvn -B test` (JDK 21) | Test đơn vị + test tích hợp Spring Boot trên SQLite tạm |
+| **Mobile** | `flutter analyze` + `flutter test` | Phân tích tĩnh, test đơn vị, test widget, test giao diện co giãn |
 
-2. **Kiểm thử Responsive toàn bộ 30 màn hình (`flutter test`)**:
-   ```bash
-   cd mobile
-   flutter test
-   ```
-   *Chạy tự động kiểm tra hiện tượng tràn pixel (overflow) của 30 màn hình trên 4 cấu hình kích thước thiết bị:*
-   - Điện thoại nhỏ: `360 x 640` (Small Phone Portrait) — **PASS (0 overflow)**
-   - Màn hình xoay ngang: `640 x 360` (Phone Landscape) — **PASS (0 overflow)**
-   - Máy tính bảng: `800 x 1280` (Tablet Portrait) — **PASS (0 overflow)**
-   - Web / Desktop / Tablet xoay ngang: `1280 x 800` — **PASS (0 overflow)**
+Xem kết quả ở tab **Actions** của repository. Khi job đỏ, mở job đó để xem test nào lỗi (báo cáo backend được lưu ở mục *Artifacts* → `backend-test-reports`).
 
-3. **Kiểm thử tích hợp Backend (`mvn test`)**:
-   ```bash
-   cd backend
-   mvn test
-   ```
-   *Kết quả: `BUILD SUCCESS` (Kiểm tra Spring Context, khởi tạo SQLite WAL, nạp DataSeeder, tự động xử lý HELD scheduler).*
+### 8.2. Backend (`backend/src/test`)
+```bash
+cd backend
+mvn test
+```
+- Test tích hợp chạy trên **một file SQLite tạm** (thư mục temp của hệ điều hành), **không** đụng tới `badminton_v2.db` của máy dev; `DataSeeder` tự nạp dữ liệu demo.
+- Gọi API qua `MockMvc` nên đi qua đủ `AuthInterceptor` (JWT, phân quyền, tài khoản bị khóa). Không gọi Gemini / PayOS / Gmail thật.
+
+| Lớp test | Kiểm tra |
+| :--- | :--- |
+| `AuthSecurityTest` | Đăng nhập trả JWT; sai mật khẩu 401; thiếu / giả token 401; phân quyền Admin / Chủ sân 403; không xem hồ sơ người khác; khóa tài khoản chặn ngay token cũ; không khóa được Admin |
+| `BookingFlowTest` | Giữ chỗ (giá do máy chủ tính); trùng giờ 409; trả chỗ (chỉ chủ vé); khung giờ sai 400; thanh toán Ví trừ đúng số dư, không trả 2 lần, Ví không đủ 400; vé riêng tư |
+| `AiAssistantTest` | Câu hỏi đúng phạm vi; thẻ dựng từ dữ liệu thật; chặn câu ngoài lề / jailbreak; 300 ký tự; giới hạn 5 tin/phút (429 + `Retry-After`); lịch sử phiên; chỉ người chơi dùng được |
+| `OwnerAdminTest` | Dashboard chủ sân / Admin; lịch theo ngày + phân quyền; vãng lai (giá máy chủ, ngoài giờ 400, trùng 409); kiểm duyệt cơ sở; duyệt giải ngân 1 lần; giải ngân vượt doanh thu 400 |
+| `AiGuardrailTest`, `BookingRulesTest` | Test đơn vị không cần Spring: lớp chặn câu hỏi AI, luật giá giờ vàng, giờ mở cửa, giữ chỗ hết hạn |
+| `BadmintonV2IntegrationTest` | Kịch bản xuyên suốt 6 module (gọi thẳng controller) |
+
+### 8.3. Mobile (`mobile/test`)
+```bash
+cd mobile
+flutter analyze
+flutter test
+```
+
+| File test | Kiểm tra |
+| :--- | :--- |
+| `booking_rules_test.dart` | Giờ vàng, giá theo khung giờ, giờ mở cửa, lịch chiếm sân, giữ chỗ hết hạn, % hoàn tiền, điều kiện hủy / đổi lịch, số liệu tài chính chủ sân |
+| `json_test.dart` | Đọc JSON sai kiểu không làm app lỗi |
+| `day_bar_chart_test.dart` | Biểu đồ 7 ngày (S19, S24): đủ cột, nhãn, không tràn ở màn hẹp |
+| `widget_test.dart` | Mở **toàn bộ 30 màn** theo đúng vai trò (Người chơi / Chủ sân / Admin) ở 4 kích thước `360x640`, `640x360`, `800x1280`, `1280x800` và bắt mọi lỗi tràn / bố cục |
+
+---
+
+## 9. API REST & Biến Môi Trường
+
+Swagger UI: `http://localhost:8080/swagger-ui.html`. Gọi `POST /api/auth/login` lấy `token`, bấm **Authorize** và dán token để thử các API cần đăng nhập.
+
+### 9.1. API chính
+| Nhóm | API | Ghi chú |
+| :--- | :--- | :--- |
+| Xác thực | `POST /api/auth/login`, `POST /api/auth/google`, `POST /api/auth/register`, `POST /api/auth/send-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password` | Trả JWT; Google qua Firebase ID token |
+| Hồ sơ & Ví | `GET/PATCH /api/auth/profile/{id}`, `POST /api/auth/wallet/{id}/topup`, `POST /api/wallet/withdraw` | Chỉ chính chủ hoặc Admin |
+| Sân | `GET /api/venues`, `GET /api/venues/{id}?playDate=` | Danh sách sân, bảng giá, lịch đã đặt trong ngày |
+| Đặt sân | `POST /api/bookings/hold`, `POST /api/bookings/{id}/release`, `GET /api/bookings/{id}`, `POST /api/bookings/{id}/reschedule`, `POST /api/bookings/{id}/cancel` | Giữ chỗ 5 phút, giá do máy chủ tính |
+| Thanh toán | `POST /api/payments/pay-with-wallet`, `POST /api/payments/create-payos`, `GET /api/payments/{orderCode}/status` | VietQR PayOS hoặc Ví |
+| Trợ lý AI | `POST /api/ai/chat`, `GET /api/ai/sessions/current`, `POST /api/ai/sessions` | Chỉ người chơi; ≤ 300 ký tự; 5 tin/phút, 30 tin/ngày |
+| Chủ sân | `GET /api/owner/{id}/dashboard`, `GET /api/owner/venues/{venueId}/bookings?date=`, `POST /api/owner/bookings/walk-in`, `POST /api/owner/bookings/check-in`, `POST /api/owner/payout-requests` | Chỉ chủ của cơ sở hoặc Admin |
+| Admin | `GET /api/admin/dashboard`, `PATCH /api/admin/venues/{id}/status`, `PATCH /api/admin/users/{id}/toggle-active`, `PATCH /api/admin/payout-requests/{id}/status` | Từ chối cần `reason` |
+
+### 9.2. Biến môi trường Backend
+| Biến | Mặc định | Ý nghĩa |
+| :--- | :--- | :--- |
+| `JWT_SECRET` | (chuỗi demo) | Khóa ký JWT — **đổi khi chạy thật** |
+| `APP_DEMO_MODE` | `true` | Cho phép mật khẩu / OTP demo `123456`; đặt `false` khi chạy thật |
+| `FIREBASE_PROJECT_ID` | (trống) | Bật đăng nhập Google (kiểm tra Firebase ID token) |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | (trống), `gemini-2.5-flash` | Trợ lý AI dùng Gemini; để trống thì dùng bộ trả lời theo luật |
+| `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | (trống) | VietQR PayOS thật; để trống thì dùng chế độ giả lập |
+| `MAIL_USERNAME`, `MAIL_PASSWORD` | (trống) | Gửi OTP qua Gmail |
+
+### 9.3. Cấu hình Mobile
+- Đăng nhập Google: xem `mobile/config/README_FIREBASE.md`, chạy với `--dart-define-from-file=config/firebase.json`.
+- Nhập giọng nói ở Trợ lý AI cần quyền **Micro** và dịch vụ nhận giọng nói của Google trên máy Android.
