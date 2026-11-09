@@ -6,10 +6,9 @@ import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S23: Owner Payout & Settlement Screen (Luồng 3 + Module 4 OTP)
-// Giao diện theo design system + sửa logic: số tiền giải ngân trước đây gán cứng
-// 15.000.000đ. Giờ được TÍNH từ các vé online đã thu hộ (PayOS / Ví) chưa nằm trong
-// yêu cầu giải ngân nào; phí 5% theo OwnerFinance. Vé đã đưa vào yêu cầu sẽ được
-// đánh dấu (ở S03 sau khi xác thực OTP) để không bị giải ngân 2 lần.
+// Số tiền có thể giải ngân do MÁY CHỦ tính (availablePayoutGross trong dashboard chủ sân):
+// doanh thu online (PayOS / Ví) của mọi cơ sở trừ phần đã gửi yêu cầu (trừ yêu cầu bị từ chối).
+// Phí nền tảng 5%. Gửi yêu cầu cần OTP email (S03); xong thì tải lại dashboard.
 class S23OwnerPayoutScreen extends StatefulWidget {
   final AppState appState;
   const S23OwnerPayoutScreen({super.key, required this.appState});
@@ -34,21 +33,33 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
     super.dispose();
   }
 
-  Future<void> _requestPayoutWithOtp(List<Map<String, dynamic>> items, num gross) async {
-    if (items.isEmpty || gross <= 0 || _sendingOtp) return;
+  @override
+  void initState() {
+    super.initState();
+    _app.refreshOwnerDashboard().catchError((Object e) => debugPrint('[S23] $e'));
+  }
+
+  Future<void> _refresh() async {
+    try {
+      await _app.refreshOwnerDashboard();
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+    }
+  }
+
+  Future<void> _requestPayoutWithOtp(num gross) async {
+    if (gross <= 0 || _sendingOtp) return;
     if (_bankNameCtrl.text.trim().isEmpty || _bankNoCtrl.text.trim().length < 6 || _holderCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập đủ thông tin tài khoản ngân hàng.')),
       );
       return;
     }
-    final venueNames = {for (final b in items) '${b['venueName']}'};
-    final stamp = DateTime.now().millisecondsSinceEpoch % 10000;
+    final venues = _app.ownerVenueList.isNotEmpty
+        ? _app.ownerVenueList
+        : OwnerFinance.ownerVenues(_app.venues, _app.userId);
     final draft = <String, dynamic>{
-      'id': stamp,
-      'payoutCode': 'PO-$stamp',
-      'venueId': items.first['venueId'],
-      'venueName': venueNames.length == 1 ? venueNames.first : '${venueNames.length} cơ sở',
+      if (venues.isNotEmpty) 'venueId': venues.last['id'],
       'ownerName': _app.fullName.split('(').first.trim(),
       'grossAmount': gross.toDouble(),
       'commissionFee': OwnerFinance.commissionOf(gross).toDouble(),
@@ -56,9 +67,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
       'bankName': _bankNameCtrl.text.trim(),
       'bankAccountNumber': _bankNoCtrl.text.trim(),
       'bankAccountHolder': _holderCtrl.text.trim().toUpperCase(),
-      'bookingCodes': [for (final b in items) b['bookingCode']],
       'status': 'PENDING',
-      'createdAt': 'Vừa xong',
     };
     // Máy chủ gửi OTP tới email của tài khoản chủ sân; S03 gửi yêu cầu kèm mã
     setState(() => _sendingOtp = true);
@@ -86,16 +95,28 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final ids = OwnerFinance.idsOf(OwnerFinance.ownerVenues(_app.venues, _app.userId));
-    final items = OwnerFinance.settleable(_app.bookings, ids);
-    final gross = OwnerFinance.revenueOf(items);
+    final d = _app.ownerDashboard;
+    final List<Map<String, dynamic>> items;
+    final num gross;
+    if (d.isNotEmpty) {
+      items = const [];
+      gross = UiFmt.toNum(d['availablePayoutGross'], 0);
+    } else {
+      // Chưa tải được dashboard: tạm tính trên các vé đã có trên máy
+      items = OwnerFinance.settleable(
+          _app.bookings, OwnerFinance.idsOf(OwnerFinance.ownerVenues(_app.venues, _app.userId)));
+      gross = OwnerFinance.revenueOf(items);
+    }
     final fee = OwnerFinance.commissionOf(gross);
     final net = OwnerFinance.netOf(gross);
     final percent = (OwnerFinance.commissionRate * 100).round();
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultFormMaxWidth,
-      child: ListView(
+      child: RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: Responsive.screenPadding(context),
         children: [
           Text('Đối soát & giải ngân',
@@ -119,7 +140,9 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
                       style: theme.textTheme.displaySmall?.copyWith(color: cs.onPrimary, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(height: 4),
-                Text('Từ ${items.length} vé online đã thu hộ',
+                Text(d.isNotEmpty
+                        ? 'Doanh thu online (VietQR / Ví) chưa giải ngân'
+                        : 'Tạm tính từ ${items.length} vé online trên máy',
                     style: theme.textTheme.bodySmall?.copyWith(color: cs.onPrimary.withValues(alpha: 0.85))),
               ],
             ),
@@ -167,7 +190,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (items.isEmpty)
+          if (gross <= 0)
             const NoteBox('Chưa có doanh thu online mới để giải ngân. Vé thanh toán qua VietQR hoặc Ví sẽ được cộng vào đây.')
           else ...[
             const NoteBox('Yêu cầu cần xác thực OTP qua email trước khi gửi tới Admin.', icon: Icons.shield_outlined),
@@ -176,7 +199,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
               label: 'Yêu cầu giải ngân ${UiFmt.vnd(net)}',
               icon: Icons.send_outlined,
               loading: _sendingOtp,
-              onPressed: _sendingOtp ? null : () => _requestPayoutWithOtp(items, gross),
+              onPressed: _sendingOtp ? null : () => _requestPayoutWithOtp(gross),
             ),
           ],
           const SizedBox(height: 24),
@@ -236,6 +259,7 @@ class _S23OwnerPayoutScreenState extends State<S23OwnerPayoutScreen> {
               ),
           const SizedBox(height: 8),
         ],
+      ),
       ),
     );
   }

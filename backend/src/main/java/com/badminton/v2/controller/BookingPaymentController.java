@@ -616,6 +616,22 @@ public class BookingPaymentController {
         if (!List.of("WALK_IN", "MAINTENANCE").contains(bookingType)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Loại lịch không hợp lệ."));
         }
+        try {
+            LocalDate.parse(playDate);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Ngày không hợp lệ (định dạng yyyy-MM-dd)."));
+        }
+        int startMin = BookingRules.toMinutes(startTime);
+        int endMin = BookingRules.toMinutes(endTime);
+        if (endMin <= startMin || startMin % 60 != 0 || endMin % 60 != 0
+                || startMin < BookingRules.openMinutes(venue) || endMin > BookingRules.closeMinutes(venue)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Khung giờ phải tròn giờ và nằm trong giờ mở cửa của cơ sở."));
+        }
+        // Khách vãng lai: giá do máy chủ tính theo bảng giá cơ sở (không tin giá app gửi lên)
+        if ("WALK_IN".equals(bookingType)) {
+            totalPrice = BookingRules.priceFor(venue, playDate, startTime, endTime);
+        }
         if (hasTimeConflict(courtId, playDate, startTime, endTime, null)) {
             return ResponseEntity.status(409).body(Map.of("error", "Khung giờ này đã có lịch đặt trước!"));
         }

@@ -2,31 +2,63 @@ package com.badminton.v2.controller;
 
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
-import com.badminton.v2.service.EmailOtpService;
+import com.badminton.v2.security.AuthUser;
 import com.badminton.v2.security.CurrentUser;
+import com.badminton.v2.service.BookingRules;
+import com.badminton.v2.service.EmailOtpService;
 import com.badminton.v2.service.NotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
+/**
+ * Chủ sân (S19-S23) và Quản trị viên (S24-S26).
+ *
+ * <ul>
+ *   <li>GET   /api/owner/{ownerId}/dashboard               tổng quan chủ sân (hôm nay, 7 ngày, từng cơ sở, giải ngân)</li>
+ *   <li>GET   /api/owner/venues/{venueId}/bookings?date=   lịch đầy đủ một cơ sở trong ngày (S21)</li>
+ *   <li>POST  /api/owner/payout-requests                   yêu cầu giải ngân kèm OTP (S23)</li>
+ *   <li>GET   /api/admin/dashboard                         tổng quan nền tảng (S24)</li>
+ *   <li>PATCH /api/admin/venues/{venueId}/status           duyệt / từ chối / tạm ngưng cơ sở (S25)</li>
+ *   <li>PATCH /api/admin/users/{userId}/toggle-active      khóa / mở khóa tài khoản (S25)</li>
+ *   <li>PATCH /api/admin/payout-requests/{id}/status       xác nhận chuyển khoản / từ chối giải ngân (S26)</li>
+ * </ul>
+ */
 @RestController
 @RequestMapping("/api")
 public class AdminOwnerFinanceController {
 
+    private static final double COMMISSION_RATE = 0.05;
+    private static final int CHART_DAYS = 7;
+    private static final Set<String> REVENUE_STATUSES = Set.of("CONFIRMED", "CHECKED_IN", "COMPLETED");
+    private static final Set<String> ONLINE_METHODS = Set.of("PAYOS_QR", "WALLET");
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /** Chuyển trạng thái cơ sở hợp lệ: chờ duyệt -> duyệt/từ chối, đang hoạt động <-> tạm ngưng. */
+    private static final Map<String, Set<String>> VENUE_TRANSITIONS = Map.of(
+            "PENDING", Set.of("APPROVED", "REJECTED"),
+            "APPROVED", Set.of("SUSPENDED"),
+            "SUSPENDED", Set.of("APPROVED"),
+            "REJECTED", Set.of("APPROVED")
+    );
+
     private final VenueRepository venueRepository;
+    private final CourtRepository courtRepository;
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
     private final PayoutRequestRepository payoutRequestRepository;
     private final UserRepository userRepository;
     private final EmailOtpService emailOtpService;
     private final NotificationService notificationService;
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public AdminOwnerFinanceController(VenueRepository venueRepository,
+                                       CourtRepository courtRepository,
                                        BookingRepository bookingRepository,
                                        PaymentRepository paymentRepository,
                                        PayoutRequestRepository payoutRequestRepository,
@@ -34,6 +66,7 @@ public class AdminOwnerFinanceController {
                                        EmailOtpService emailOtpService,
                                        NotificationService notificationService) {
         this.venueRepository = venueRepository;
+        this.courtRepository = courtRepository;
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
         this.payoutRequestRepository = payoutRequestRepository;
@@ -42,51 +75,141 @@ public class AdminOwnerFinanceController {
         this.notificationService = notificationService;
     }
 
-    // S19 & S23: Owner Dashboard & Payout Summary
+    // ===================================================================== Chủ sân
+
+    // S19 & S23: tổng quan chủ sân
     @GetMapping("/owner/{ownerId}/dashboard")
     public ResponseEntity<?> getOwnerDashboard(@PathVariable Long ownerId) {
         CurrentUser.requireSelfOrAdmin(ownerId);
         List<Venue> venues = venueRepository.findByOwnerIdOrderByIdDesc(ownerId);
-        List<Long> venueIds = venues.stream().map(Venue::getId).toList();
+        String today = LocalDate.now().toString();
 
-        double totalGrossRevenue = 0;
-        int totalBookingsCount = 0;
+        double totalGross = 0;
+        double onlineGross = 0;
+        int totalBookings = 0;
         int walkInCount = 0;
         List<Booking> recentBookings = new ArrayList<>();
+        List<Booking> todaySessions = new ArrayList<>();
+        Map<String, double[]> byDay = emptyDays(); // ngày -> [doanh thu, số ca]
+        List<Map<String, Object>> venueStats = new ArrayList<>();
+        int bookedHoursToday = 0;
+        int capacityHoursToday = 0;
 
-        for (Long vid : venueIds) {
-            List<Booking> bks = bookingRepository.findByVenueIdOrderByIdDesc(vid);
-            for (Booking b : bks) {
-                if (List.of("CONFIRMED", "CHECKED_IN", "COMPLETED").contains(b.getStatus())) {
-                    totalGrossRevenue += b.getTotalPrice();
-                    totalBookingsCount++;
-                    if ("WALK_IN".equals(b.getBookingType())) walkInCount++;
+        for (Venue v : venues) {
+            List<Booking> bookings = bookingRepository.findByVenueIdOrderByIdDesc(v.getId());
+            double venueToday = 0;
+            int venueSessionsToday = 0;
+            for (Booking b : bookings) {
+                if (recentBookings.size() < 15) recentBookings.add(b);
+                if (today.equals(b.getPlayDate()) && BookingRules.blocksCourt(b)
+                        && !"MAINTENANCE".equals(b.getBookingType())) {
+                    bookedHoursToday += hoursOf(b);
                 }
-                if (recentBookings.size() < 15) {
-                    recentBookings.add(b);
+                if (!isRevenue(b)) continue;
+                totalGross += b.getTotalPrice();
+                totalBookings++;
+                if ("WALK_IN".equals(b.getBookingType())) walkInCount++;
+                if (isOnline(b)) onlineGross += b.getTotalPrice();
+                double[] day = byDay.get(b.getPlayDate());
+                if (day != null) {
+                    day[0] += b.getTotalPrice();
+                    day[1]++;
+                }
+                if (today.equals(b.getPlayDate())) {
+                    todaySessions.add(b);
+                    venueToday += b.getTotalPrice();
+                    venueSessionsToday++;
                 }
             }
+            if ("APPROVED".equals(v.getStatus())) {
+                capacityHoursToday += activeCourts(v) * openHours(v);
+            }
+            Map<String, Object> stat = new LinkedHashMap<>();
+            stat.put("venueId", v.getId());
+            stat.put("name", v.getName());
+            stat.put("status", v.getStatus());
+            stat.put("totalCourts", v.getTotalCourts());
+            stat.put("revenueToday", venueToday);
+            stat.put("sessionsToday", venueSessionsToday);
+            venueStats.add(stat);
         }
+        todaySessions.sort(Comparator.comparing(Booking::getStartTime).thenComparing(Booking::getCourtName));
 
-        double commissionFee = Math.round(totalGrossRevenue * 0.05);
-        double netRevenue = totalGrossRevenue - commissionFee;
         List<PayoutRequest> payouts = payoutRequestRepository.findByOwnerIdOrderByIdDesc(ownerId);
-        double alreadyRequestedNet = payouts.stream()
+        double requestedGross = payouts.stream()
                 .filter(p -> !"REJECTED".equals(p.getStatus()))
+                .mapToDouble(PayoutRequest::getGrossAmount)
+                .sum();
+        double pendingPayoutNet = payouts.stream()
+                .filter(p -> "PENDING".equals(p.getStatus()))
                 .mapToDouble(PayoutRequest::getNetPayoutAmount)
                 .sum();
-        double availableNetPayout = Math.max(0, netRevenue - alreadyRequestedNet);
+        double availableGross = Math.max(0, onlineGross - requestedGross);
+        double commissionFee = commissionOf(totalGross);
+
+        Map<String, Object> todayStats = new LinkedHashMap<>();
+        todayStats.put("date", today);
+        todayStats.put("revenue", todaySessions.stream().mapToDouble(Booking::getTotalPrice).sum());
+        todayStats.put("sessions", todaySessions.size());
+        todayStats.put("waitingCheckIn", todaySessions.stream().filter(b -> "CONFIRMED".equals(b.getStatus())).count());
+        todayStats.put("occupancyPercent", capacityHoursToday == 0 ? 0
+                : Math.min(100, Math.round(bookedHoursToday * 100.0 / capacityHoursToday)));
 
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("venues", venues);
-        res.put("totalGrossRevenue", totalGrossRevenue);
+        res.put("venueStats", venueStats);
+        res.put("today", todayStats);
+        res.put("todaySessions", todaySessions);
+        res.put("last7Days", dayRows(byDay));
+        res.put("totalGrossRevenue", totalGross);
         res.put("commissionFee", commissionFee);
-        res.put("netRevenue", netRevenue);
-        res.put("availableNetPayout", availableNetPayout);
-        res.put("totalBookingsCount", totalBookingsCount);
+        res.put("netRevenue", totalGross - commissionFee);
+        res.put("onlineGrossRevenue", onlineGross);
+        res.put("availablePayoutGross", availableGross);
+        res.put("availableNetPayout", availableGross - commissionOf(availableGross));
+        res.put("pendingPayoutNet", pendingPayoutNet);
+        res.put("commissionRate", COMMISSION_RATE);
+        res.put("totalBookingsCount", totalBookings);
         res.put("walkInCount", walkInCount);
         res.put("recentBookings", recentBookings);
         res.put("payoutRequests", payouts);
+        return ResponseEntity.ok(res);
+    }
+
+    // S21: lịch đầy đủ một cơ sở trong ngày (kèm tên / SĐT khách, chỉ chủ sân & Admin xem được)
+    @GetMapping("/owner/venues/{venueId}/bookings")
+    public ResponseEntity<?> getVenueBookingsOfDay(@PathVariable Long venueId,
+                                                   @RequestParam(required = false) String date) {
+        Venue venue = venueRepository.findById(venueId).orElseThrow();
+        CurrentUser.requireAnyOf("Cơ sở này không thuộc tài khoản của bạn.", venue.getOwnerId());
+        String playDate;
+        try {
+            playDate = (date == null || date.isBlank()) ? LocalDate.now().toString() : LocalDate.parse(date).toString();
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Ngày không hợp lệ (định dạng yyyy-MM-dd)."));
+        }
+
+        List<Booking> bookings = bookingRepository.findByVenueIdAndPlayDateOrderByStartTimeAsc(venueId, playDate)
+                .stream()
+                .filter(b -> !"EXPIRED".equals(b.getStatus()))
+                .filter(b -> !"HELD".equals(b.getStatus()) || BookingRules.isHoldActive(b))
+                .sorted(Comparator.comparing(Booking::getStartTime).thenComparing(Booking::getCourtName))
+                .toList();
+        List<Court> courts = courtRepository.findByVenueIdOrderByIdAsc(venueId);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("sessions", bookings.stream().filter(this::isRevenue).count());
+        summary.put("revenue", bookings.stream().filter(this::isRevenue).mapToDouble(Booking::getTotalPrice).sum());
+        summary.put("waitingCheckIn", bookings.stream()
+                .filter(b -> "CONFIRMED".equals(b.getStatus()) && !"MAINTENANCE".equals(b.getBookingType()))
+                .count());
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("venue", venue);
+        res.put("playDate", playDate);
+        res.put("courts", courts);
+        res.put("bookings", bookings);
+        res.put("summary", summary);
         return ResponseEntity.ok(res);
     }
 
@@ -95,17 +218,27 @@ public class AdminOwnerFinanceController {
     @Transactional
     public ResponseEntity<?> createPayoutRequest(@RequestBody Map<String, Object> body) {
         Long ownerId = CurrentUser.idOr(body.getOrDefault("ownerId", 2));
-        Long venueId = Long.parseLong(String.valueOf(body.getOrDefault("venueId", 1)));
-        double grossAmount = Double.parseDouble(String.valueOf(body.getOrDefault("grossAmount", 2000000)));
-        String bankName = String.valueOf(body.getOrDefault("bankName", "Vietcombank"));
-        String bankAccountNumber = String.valueOf(body.getOrDefault("bankAccountNumber", "0071001234567"));
-        String bankAccountHolder = String.valueOf(body.getOrDefault("bankAccountHolder", "NGUYEN CHU SAN"));
+        double grossAmount = Double.parseDouble(String.valueOf(body.getOrDefault("grossAmount", 0)));
+        String bankName = String.valueOf(body.getOrDefault("bankName", "")).trim();
+        String bankAccountNumber = String.valueOf(body.getOrDefault("bankAccountNumber", "")).trim();
+        String bankAccountHolder = String.valueOf(body.getOrDefault("bankAccountHolder", "")).trim().toUpperCase();
         String otpCode = String.valueOf(body.getOrDefault("otpCode", "")).trim();
 
         User owner = userRepository.findById(ownerId).orElseThrow();
-        Venue venue = venueRepository.findById(venueId).orElseThrow();
-        if (!ownerId.equals(venue.getOwnerId())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Cơ sở này không thuộc tài khoản của bạn."));
+        List<Venue> ownVenues = venueRepository.findByOwnerIdOrderByIdDesc(ownerId);
+        if (ownVenues.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Tài khoản chưa có cơ sở nào."));
+        }
+        Venue venue = ownVenues.get(ownVenues.size() - 1);
+        if (body.get("venueId") != null) {
+            Long venueId = Long.parseLong(String.valueOf(body.get("venueId")));
+            venue = venueRepository.findById(venueId).orElseThrow();
+            if (!ownerId.equals(venue.getOwnerId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "Cơ sở này không thuộc tài khoản của bạn."));
+            }
+        }
+        if (bankName.isEmpty() || bankAccountNumber.length() < 6 || bankAccountHolder.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng nhập đủ thông tin tài khoản ngân hàng."));
         }
         if (grossAmount <= 0) {
             return ResponseEntity.badRequest().body(Map.of("error", "Số tiền giải ngân phải lớn hơn 0."));
@@ -119,13 +252,13 @@ public class AdminOwnerFinanceController {
             return ResponseEntity.badRequest().body(Map.of("error", "Mã bảo mật OTP không chính xác hoặc đã hết hạn."));
         }
 
-        double commissionFee = Math.round(grossAmount * 0.05);
+        double commissionFee = commissionOf(grossAmount);
         double netAmount = grossAmount - commissionFee;
 
         PayoutRequest pr = new PayoutRequest();
         pr.setPayoutCode("PO-" + (System.currentTimeMillis() % 1000000));
-        pr.setVenueId(venueId);
-        pr.setVenueName(venue.getName());
+        pr.setVenueId(venue.getId());
+        pr.setVenueName(ownVenues.size() > 1 ? ownVenues.size() + " cơ sở" : venue.getName());
         pr.setOwnerId(ownerId);
         pr.setOwnerName(owner.getFullName());
         pr.setGrossAmount(grossAmount);
@@ -157,10 +290,7 @@ public class AdminOwnerFinanceController {
         double online = 0;
         for (Venue v : venueRepository.findByOwnerIdOrderByIdDesc(ownerId)) {
             for (Booking b : bookingRepository.findByVenueIdOrderByIdDesc(v.getId())) {
-                if (List.of("CONFIRMED", "CHECKED_IN", "COMPLETED").contains(b.getStatus())
-                        && List.of("PAYOS_QR", "WALLET").contains(b.getPaymentMethod())) {
-                    online += b.getTotalPrice();
-                }
+                if (isRevenue(b) && isOnline(b)) online += b.getTotalPrice();
             }
         }
         double requested = payoutRequestRepository.findByOwnerIdOrderByIdDesc(ownerId).stream()
@@ -170,72 +300,138 @@ public class AdminOwnerFinanceController {
         return Math.max(0, online - requested);
     }
 
-    // S24: Admin Platform Overview
+    // ============================================================== Quản trị viên
+
+    // S24: tổng quan nền tảng
     @GetMapping("/admin/dashboard")
     public ResponseEntity<?> getAdminDashboard() {
         List<Venue> allVenues = venueRepository.findAll();
         List<User> allUsers = userRepository.findAll();
         List<PayoutRequest> allPayouts = payoutRequestRepository.findAllByOrderByIdDesc();
         List<Payment> paidPayments = paymentRepository.findByStatusOrderByIdDesc("PAID");
+        String today = LocalDate.now().toString();
 
         double totalGmv = paidPayments.stream().mapToDouble(Payment::getAmount).sum();
-        double platformCommission = Math.round(totalGmv * 0.05);
-        long pendingVenuesCount = allVenues.stream().filter(v -> "PENDING".equals(v.getStatus())).count();
-        long pendingPayoutsCount = allPayouts.stream().filter(p -> "PENDING".equals(p.getStatus())).count();
+        Map<String, double[]> byDay = emptyDays();
+        for (Payment p : paidPayments) {
+            String day = p.getPaidAt() != null && p.getPaidAt().length() >= 10
+                    ? p.getPaidAt().substring(0, 10)
+                    : (p.getCreatedAt() != null && p.getCreatedAt().length() >= 10 ? p.getCreatedAt().substring(0, 10) : "");
+            double[] row = byDay.get(day);
+            if (row != null) {
+                row[0] += p.getAmount();
+                row[1]++;
+            }
+        }
+
+        long bookingsToday = 0;
+        for (Venue v : allVenues) {
+            bookingsToday += bookingRepository.findByVenueIdAndPlayDateOrderByStartTimeAsc(v.getId(), today)
+                    .stream().filter(this::isRevenue).count();
+        }
+
+        Map<String, Long> usersByRole = new LinkedHashMap<>();
+        for (String role : List.of("CUSTOMER", "COURT_OWNER", "ADMIN")) usersByRole.put(role, 0L);
+        for (User u : allUsers) usersByRole.merge(String.valueOf(u.getRole()), 1L, Long::sum);
 
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("totalGmv", totalGmv);
-        res.put("platformCommission", platformCommission);
+        res.put("platformCommission", commissionOf(totalGmv));
+        res.put("commissionRate", COMMISSION_RATE);
         res.put("totalUsers", allUsers.size());
+        res.put("lockedUsersCount", allUsers.stream().filter(u -> !u.isActive()).count());
+        res.put("usersByRole", usersByRole);
         res.put("totalVenues", allVenues.size());
-        res.put("pendingVenuesCount", pendingVenuesCount);
-        res.put("pendingPayoutsCount", pendingPayoutsCount);
+        res.put("activeVenuesCount", allVenues.stream().filter(v -> "APPROVED".equals(v.getStatus())).count());
+        res.put("pendingVenuesCount", allVenues.stream().filter(v -> "PENDING".equals(v.getStatus())).count());
+        res.put("pendingPayoutsCount", allPayouts.stream().filter(p -> "PENDING".equals(p.getStatus())).count());
+        res.put("pendingPayoutsAmount", allPayouts.stream()
+                .filter(p -> "PENDING".equals(p.getStatus()))
+                .mapToDouble(PayoutRequest::getNetPayoutAmount).sum());
+        res.put("bookingsToday", bookingsToday);
+        res.put("gmvLast7Days", dayRows(byDay));
         res.put("venues", allVenues);
         res.put("users", allUsers);
         res.put("payoutRequests", allPayouts);
-        res.put("recentPayments", paidPayments);
+        res.put("recentPayments", paidPayments.subList(0, Math.min(20, paidPayments.size())));
         return ResponseEntity.ok(res);
     }
 
-    // S25: Admin Moderation - Duyệt / Từ chối cơ sở cầu lông
+    // S25: duyệt / từ chối / tạm ngưng / mở lại cơ sở. Body: {status, reason?}
     @PatchMapping("/admin/venues/{venueId}/status")
     @Transactional
     public ResponseEntity<?> moderateVenue(@PathVariable Long venueId, @RequestBody Map<String, String> body) {
-        String status = body.getOrDefault("status", "APPROVED").toUpperCase();
+        String status = String.valueOf(body.getOrDefault("status", "")).trim().toUpperCase();
+        String reason = trimReason(body.get("reason"));
         Venue venue = venueRepository.findById(venueId).orElseThrow();
+        String current = venue.getStatus() == null ? "PENDING" : venue.getStatus();
+        if (!VENUE_TRANSITIONS.getOrDefault(current, Set.of()).contains(status)) {
+            return ResponseEntity.status(409).body(Map.of(
+                    "error", "Không thể chuyển cơ sở từ trạng thái " + current + " sang " + status + "."));
+        }
+        if ("REJECTED".equals(status) && reason == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng nhập lý do từ chối để chủ sân chỉnh sửa."));
+        }
         venue.setStatus(status);
         venueRepository.save(venue);
 
-        notificationService.notifyUser(
-                venue.getOwnerId(),
-                "APPROVED".equals(status)
-                        ? "Cơ sở '" + venue.getName() + "' đã được Admin phê duyệt!"
-                        : "Hồ sơ cơ sở '" + venue.getName() + "' bị từ chối",
-                "APPROVED".equals(status)
-                        ? "Sân của bạn đã chính thức hiển thị trên Bản đồ OpenStreetMap và sẵn sàng nhận khách đặt online."
-                        : "Vui lòng kiểm tra lại thông tin địa chỉ và bảng giá.",
-                "SYSTEM",
-                "S19",
-                venue.getId()
-        );
+        String title;
+        String message;
+        switch (status) {
+            case "APPROVED" -> {
+                title = "Cơ sở '" + venue.getName() + "' đã được phê duyệt!";
+                message = "Sân của bạn đã hiển thị trên Bản đồ và sẵn sàng nhận khách đặt online.";
+            }
+            case "REJECTED" -> {
+                title = "Hồ sơ cơ sở '" + venue.getName() + "' bị từ chối";
+                message = "Lý do: " + reason;
+            }
+            default -> {
+                title = "Cơ sở '" + venue.getName() + "' tạm ngưng hiển thị";
+                message = reason != null ? "Lý do: " + reason : "Vui lòng liên hệ Admin để biết thêm chi tiết.";
+            }
+        }
+        notificationService.notifyUser(venue.getOwnerId(), title, message, "SYSTEM", "S19", venue.getId());
         return ResponseEntity.ok(venue);
     }
 
-    // S25: Admin Moderation - Khóa / Mở khóa tài khoản người dùng
+    // S25: khóa / mở khóa tài khoản (không khóa được tài khoản Admin, kể cả chính mình)
     @PatchMapping("/admin/users/{userId}/toggle-active")
     @Transactional
     public ResponseEntity<?> toggleUserActive(@PathVariable Long userId) {
         User u = userRepository.findById(userId).orElseThrow();
+        Long currentId = CurrentUser.get().map(AuthUser::id).orElse(null);
+        if (userId.equals(currentId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Bạn không thể tự khóa tài khoản của mình."));
+        }
+        if ("ADMIN".equals(u.getRole())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Không thể khóa tài khoản Quản trị viên."));
+        }
         u.setActive(!u.isActive());
-        return ResponseEntity.ok(userRepository.save(u));
+        User saved = userRepository.save(u);
+        if (saved.isActive()) {
+            notificationService.notifyUser(saved.getId(), "Tài khoản đã được mở khóa",
+                    "Bạn có thể đăng nhập và sử dụng ứng dụng bình thường.", "SYSTEM", "S06", saved.getId());
+        }
+        return ResponseEntity.ok(saved);
     }
 
-    // S26: Admin Duyệt giải ngân Payout cho Chủ sân
+    // S26: Admin xác nhận đã chuyển khoản (PAID) hoặc từ chối (REJECTED, cần lý do). Body: {status, reason?}
     @PatchMapping("/admin/payout-requests/{id}/status")
     @Transactional
     public ResponseEntity<?> updatePayoutStatus(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        String status = body.getOrDefault("status", "PAID").toUpperCase();
+        String status = String.valueOf(body.getOrDefault("status", "")).trim().toUpperCase();
+        String reason = trimReason(body.get("reason"));
         PayoutRequest pr = payoutRequestRepository.findById(id).orElseThrow();
+        if (!List.of("PAID", "REJECTED").contains(status)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Trạng thái giải ngân không hợp lệ."));
+        }
+        if (!"PENDING".equals(pr.getStatus())) {
+            return ResponseEntity.status(409).body(Map.of("error", "Yêu cầu #" + pr.getPayoutCode() + " đã được xử lý trước đó."));
+        }
+        if ("REJECTED".equals(status) && reason == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng nhập lý do từ chối."));
+        }
         pr.setStatus(status);
         if ("PAID".equals(status)) {
             pr.setPaidAt(LocalDateTime.now().format(FMT));
@@ -246,14 +442,70 @@ public class AdminOwnerFinanceController {
                 pr.getOwnerId(),
                 "PAID".equals(status)
                         ? "Admin đã giải ngân đối soát #" + pr.getPayoutCode()
-                        : "Cập nhật lệnh đối soát #" + pr.getPayoutCode(),
+                        : "Yêu cầu giải ngân #" + pr.getPayoutCode() + " bị từ chối",
                 "PAID".equals(status)
                         ? "Số tiền " + (long) pr.getNetPayoutAmount() + "đ đã được chuyển vào tài khoản " + pr.getBankName() + " (" + pr.getBankAccountNumber() + ")."
-                        : "Trạng thái lệnh rút tiền: " + status,
+                        : "Lý do: " + reason + ". Doanh thu đã được trả lại để bạn gửi yêu cầu mới.",
                 "PAYMENT",
                 "S23",
                 pr.getId()
         );
         return ResponseEntity.ok(pr);
+    }
+
+    // ==================================================================== Tiện ích
+
+    private boolean isRevenue(Booking b) {
+        return REVENUE_STATUSES.contains(b.getStatus()) && !"MAINTENANCE".equals(b.getBookingType());
+    }
+
+    private boolean isOnline(Booking b) {
+        return ONLINE_METHODS.contains(b.getPaymentMethod());
+    }
+
+    private static double commissionOf(double gross) {
+        return Math.round(gross * COMMISSION_RATE);
+    }
+
+    private static int hoursOf(Booking b) {
+        return Math.max(0, (BookingRules.toMinutes(b.getEndTime()) - BookingRules.toMinutes(b.getStartTime())) / 60);
+    }
+
+    private int activeCourts(Venue v) {
+        List<Court> courts = courtRepository.findByVenueIdOrderByIdAsc(v.getId());
+        long active = courts.stream().filter(Court::isActive).count();
+        return (int) (courts.isEmpty() ? v.getTotalCourts() : active);
+    }
+
+    private static int openHours(Venue v) {
+        return Math.max(0, (BookingRules.closeMinutes(v) - BookingRules.openMinutes(v)) / 60);
+    }
+
+    /** 7 ngày gần nhất (cũ -> mới, gồm hôm nay), mỗi ngày [giá trị, số lượng]. */
+    private static Map<String, double[]> emptyDays() {
+        Map<String, double[]> days = new LinkedHashMap<>();
+        LocalDate today = LocalDate.now();
+        for (int i = CHART_DAYS - 1; i >= 0; i--) {
+            days.put(today.minusDays(i).toString(), new double[]{0, 0});
+        }
+        return days;
+    }
+
+    private static List<Map<String, Object>> dayRows(Map<String, double[]> days) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        days.forEach((date, v) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", date);
+            row.put("amount", v[0]);
+            row.put("count", (long) v[1]);
+            rows.add(row);
+        });
+        return rows;
+    }
+
+    private static String trimReason(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String r = raw.trim();
+        return r.length() > 300 ? r.substring(0, 300) : r;
     }
 }

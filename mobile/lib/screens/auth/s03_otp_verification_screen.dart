@@ -119,14 +119,11 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
       bankAccountHolder: '${draft['bankAccountHolder']}',
       otpCode: code,
     );
-    // Giữ danh sách vé của bản nháp để không tính doanh thu 2 lần
     final request = {...draft, ...saved};
     app.payoutRequests.insert(0, request);
     app.pendingPayoutDraft = null;
-    final codes = (draft['bookingCodes'] as List?)?.map((e) => '$e').toSet() ?? const <String>{};
-    for (final b in app.bookings) {
-      if (codes.contains('${b['bookingCode']}')) b['payoutCode'] = request['payoutCode'];
-    }
+    // Máy chủ đã trừ số tiền này khỏi phần có thể giải ngân: tải lại số liệu
+    app.refreshOwnerDashboard().catchError((Object e) => debugPrint('[payout] $e'));
     if (!mounted) return;
     app.pushNotification(
       title: 'Đã xác thực OTP & gửi yêu cầu giải ngân #${request['payoutCode']}',

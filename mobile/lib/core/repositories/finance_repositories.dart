@@ -31,8 +31,14 @@ class OwnerRepository {
   OwnerRepository([ApiClient? api]) : _api = api ?? ApiClient.instance;
   final ApiClient _api;
 
-  /// `{venues, totalGrossRevenue, netRevenue, availableNetPayout, recentBookings, payoutRequests, ...}`.
+  /// `{venues, venueStats, today{revenue, sessions, waitingCheckIn, occupancyPercent}, todaySessions,
+  /// last7Days[{date, amount, count}], availablePayoutGross, availableNetPayout, pendingPayoutNet,
+  /// recentBookings, payoutRequests, ...}`.
   Future<Json> dashboard(int ownerId) async => asJson(await _api.get('/owner/$ownerId/dashboard'));
+
+  /// Lịch đầy đủ một cơ sở trong ngày (S21): `{venue, playDate, courts, bookings, summary}`.
+  Future<Json> venueBookings(Object venueId, {String? date}) async =>
+      asJson(await _api.get('/owner/venues/$venueId/bookings', query: {'date': date}));
 
   /// Gửi yêu cầu giải ngân (có xác thực OTP). Trả về PayoutRequest đã lưu.
   Future<Json> createPayoutRequest({
@@ -63,14 +69,21 @@ class AdminRepository {
   /// `{totalGmv, platformCommission, venues, users, payoutRequests, recentPayments, ...}`.
   Future<Json> dashboard() async => asJson(await _api.get('/admin/dashboard'));
 
-  /// Duyệt (APPROVED) / từ chối (REJECTED) cơ sở. Trả về Venue đã cập nhật.
-  Future<Json> moderateVenue(Object venueId, String status) async =>
-      asJson(await _api.patch('/admin/venues/$venueId/status', {'status': status}));
+  /// Duyệt (APPROVED) / từ chối (REJECTED, cần [reason]) / tạm ngưng (SUSPENDED) cơ sở.
+  /// Trả về Venue đã cập nhật.
+  Future<Json> moderateVenue(Object venueId, String status, {String? reason}) async =>
+      asJson(await _api.patch('/admin/venues/$venueId/status', {
+        'status': status,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      }));
 
   Future<Json> toggleUserActive(Object userId) async =>
       asJson(await _api.patch('/admin/users/$userId/toggle-active'));
 
-  /// PAID (đã chuyển khoản) / REJECTED. Trả về PayoutRequest đã cập nhật.
-  Future<Json> updatePayoutStatus(Object payoutId, String status) async =>
-      asJson(await _api.patch('/admin/payout-requests/$payoutId/status', {'status': status}));
+  /// PAID (đã chuyển khoản) / REJECTED (cần [reason]). Trả về PayoutRequest đã cập nhật.
+  Future<Json> updatePayoutStatus(Object payoutId, String status, {String? reason}) async =>
+      asJson(await _api.patch('/admin/payout-requests/$payoutId/status', {
+        'status': status,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      }));
 }

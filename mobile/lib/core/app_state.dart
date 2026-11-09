@@ -118,6 +118,21 @@ class AppState extends ChangeNotifier {
 
   List<Map<String, dynamic>> payoutRequests = DemoSeed.payoutRequests();
 
+  /// Tổng quan chủ sân từ máy chủ (S19, S23): today, last7Days, venueStats, availablePayoutGross...
+  Json ownerDashboard = {};
+
+  /// Mọi cơ sở của chủ sân, kể cả đang chờ duyệt / bị từ chối / tạm ngưng.
+  List<Map<String, dynamic>> ownerVenueList = [];
+
+  /// Tổng quan nền tảng từ máy chủ (S24): gmvLast7Days, usersByRole, bookingsToday...
+  Json adminDashboard = {};
+
+  /// Tài khoản toàn hệ thống (S25 - khóa / mở khóa).
+  List<Map<String, dynamic>> adminUsers = [];
+
+  /// Tab mở sẵn khi vào S25: 0 = duyệt cơ sở, 1 = tài khoản.
+  int adminModerationTab = 0;
+
   int get unreadNotificationCount =>
       notifications.where((n) => n['isRead'] == false).length;
 
@@ -386,6 +401,11 @@ class AppState extends ChangeNotifier {
         await sp.remove(key);
       }
     } catch (_) {}
+    // Dữ liệu quản trị của tài khoản cũ không được còn lại cho tài khoản đăng nhập sau
+    ownerDashboard = {};
+    ownerVenueList = [];
+    adminDashboard = {};
+    adminUsers = [];
     resetTo('S01');
   }
 
@@ -459,16 +479,39 @@ class AppState extends ChangeNotifier {
   }
 
   void _applyOwnerDashboard(Json d) {
-    final ownVenues = asJsonList(d['venues']);
-    adminPendingVenues = ownVenues.where((v) => v['status'] == 'PENDING').toList();
-    // TODO(giai đoạn 5): API lịch sân riêng cho chủ sân; tạm dùng 15 vé gần nhất
-    bookings = asJsonList(d['recentBookings']);
+    ownerDashboard = d;
+    ownerVenueList = asJsonList(d['venues']);
+    adminPendingVenues = ownerVenueList.where((v) => v['status'] == 'PENDING').toList();
+    // Vé của chủ sân: toàn bộ ca hôm nay (để quét check-in S22) + các vé gần nhất.
+    // Lịch từng ngày ở S21 tải riêng qua Repos.owner.venueBookings.
+    final merged = <String, Json>{};
+    for (final b in [...asJsonList(d['todaySessions']), ...asJsonList(d['recentBookings'])]) {
+      merged.putIfAbsent('${b['id'] ?? b['bookingCode']}', () => b);
+    }
+    bookings = merged.values.toList();
     payoutRequests = asJsonList(d['payoutRequests']);
   }
 
   void _applyAdminDashboard(Json d) {
+    adminDashboard = d;
+    adminUsers = asJsonList(d['users']);
     adminPendingVenues = asJsonList(d['venues']).where((v) => v['status'] == 'PENDING').toList();
     payoutRequests = asJsonList(d['payoutRequests']);
+  }
+
+  /// Tải lại tổng quan chủ sân (sau check-in, thêm vãng lai, gửi giải ngân...).
+  /// Ném lỗi cho màn hình hiển thị (kéo để làm mới).
+  Future<void> refreshOwnerDashboard() async {
+    if (role != 'COURT_OWNER') return;
+    _applyOwnerDashboard(await Repos.owner.dashboard(userId));
+    notifyListeners();
+  }
+
+  /// Tải lại tổng quan nền tảng (sau duyệt cơ sở, khóa tài khoản, duyệt giải ngân...).
+  Future<void> refreshAdminDashboard() async {
+    if (role != 'ADMIN') return;
+    _applyAdminDashboard(await Repos.admin.dashboard());
+    notifyListeners();
   }
 
   // ---------------------------------------------------------------- Vé đặt sân

@@ -88,7 +88,9 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
       return;
     }
 
-    widget.appState.adminPendingVenues.insert(0, {...newVenue, ...saved});
+    final created = {...newVenue, ...saved};
+    widget.appState.adminPendingVenues.insert(0, created);
+    widget.appState.ownerVenueList.insert(0, created);
     if (!mounted) return;
     setState(() => _loading = false);
     widget.appState.pushNotification(

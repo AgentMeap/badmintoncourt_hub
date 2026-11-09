@@ -7,7 +7,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // S26: Admin Payout & Reconciliation Screen (Luồng 3)
 // Giao diện theo design system + bổ sung logic:
 // - Xác nhận đã chuyển khoản có hộp thoại xác nhận
-// - Thêm "Từ chối": các vé trong yêu cầu được nhả ra để chủ sân gửi lại
+// - "Từ chối" bắt buộc nhập lý do; máy chủ trả doanh thu lại cho chủ sân gửi yêu cầu mới
 // - Lọc Chờ duyệt / Đã xử lý, số tiền định dạng tiền Việt
 class S26AdminPayoutReconciliationScreen extends StatefulWidget {
   final AppState appState;
@@ -20,42 +20,98 @@ class S26AdminPayoutReconciliationScreen extends StatefulWidget {
 class _S26AdminPayoutReconciliationScreenState extends State<S26AdminPayoutReconciliationScreen> {
   bool _showPending = true;
 
+  final Set<Object?> _busy = {};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.appState.refreshAdminDashboard().catchError((Object e) => debugPrint('[S26] $e'));
+  }
+
+  Future<String?> _askReason(Map<String, dynamic> pr) async {
+    final ctrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Từ chối yêu cầu #${pr['payoutCode']}?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Doanh thu được trả lại để chủ sân gửi yêu cầu mới.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                maxLength: 300,
+                minLines: 2,
+                maxLines: 4,
+                onChanged: (_) => setLocal(() {}),
+                decoration: const InputDecoration(
+                  hintText: 'Lý do (VD: sai tên chủ tài khoản...)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+                foregroundColor: Theme.of(ctx).colorScheme.onError,
+              ),
+              onPressed: ctrl.text.trim().isEmpty ? null : () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Từ chối'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    return result;
+  }
+
   Future<void> _decide(Map<String, dynamic> pr, String decision) async {
+    if (_busy.contains(pr['id'])) return;
     final paid = decision == 'PAID';
     final net = UiFmt.vnd(UiFmt.toNum(pr['netPayoutAmount'], 0));
-    final ok = await confirmAction(
-      context,
-      title: paid ? 'Xác nhận đã chuyển khoản?' : 'Từ chối yêu cầu?',
-      message: paid
-          ? 'Xác nhận đã chuyển $net tới ${pr['bankName']} • ${pr['bankAccountNumber']} (${pr['bankAccountHolder']}).'
-          : 'Yêu cầu #${pr['payoutCode']} sẽ bị từ chối. Doanh thu được trả lại để chủ sân gửi yêu cầu mới.',
-      confirmLabel: paid ? 'Đã chuyển khoản' : 'Từ chối',
-      destructive: !paid,
-    );
-    if (!ok || !mounted || pr['status'] != 'PENDING') return;
+    String? reason;
+    if (paid) {
+      final ok = await confirmAction(
+        context,
+        title: 'Xác nhận đã chuyển khoản?',
+        message: 'Xác nhận đã chuyển $net tới ${pr['bankName']} • ${pr['bankAccountNumber']} (${pr['bankAccountHolder']}).',
+        confirmLabel: 'Đã chuyển khoản',
+      );
+      if (!ok) return;
+    } else {
+      reason = await _askReason(pr);
+      if (reason == null) return;
+    }
+    if (!mounted || pr['status'] != 'PENDING') return;
 
+    setState(() => _busy.add(pr['id']));
     final Json saved;
     try {
-      saved = await Repos.admin.updatePayoutStatus(pr['id'], decision);
+      saved = await Repos.admin.updatePayoutStatus(pr['id'], decision, reason: reason);
     } catch (e) {
-      if (mounted) showApiError(context, e);
+      if (!mounted) return;
+      setState(() => _busy.remove(pr['id']));
+      showApiError(context, e);
+      // 409: yêu cầu đã được xử lý ở nơi khác -> tải lại trạng thái thật
+      widget.appState.refreshAdminDashboard().catchError((Object e) => debugPrint('[S26] $e'));
       return;
     }
 
     if (!mounted) return;
     setState(() {
+      _busy.remove(pr['id']);
       pr.addAll(saved);
       pr['status'] = decision;
-      if (!paid) {
-        // Nhả các vé đã gắn vào yêu cầu này
-        final codes = (pr['bookingCodes'] as List?)?.map((e) => '$e').toSet() ?? const <String>{};
-        for (final b in widget.appState.bookings) {
-          if (codes.contains('${b['bookingCode']}') && b['payoutCode'] == pr['payoutCode']) {
-            b.remove('payoutCode');
-          }
-        }
-      }
     });
+    widget.appState.refreshAdminDashboard().catchError((Object e) => debugPrint('[S26] $e'));
     widget.appState.pushNotification(
       title: paid ? 'Đã giải ngân #${pr['payoutCode']}' : 'Đã từ chối yêu cầu #${pr['payoutCode']}',
       body: paid ? 'Đã chuyển $net cho chủ sân.' : 'Chủ sân có thể kiểm tra lại và gửi yêu cầu mới.',
