@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -31,19 +31,25 @@ class _S25AdminModerationScreenState extends State<S25AdminModerationScreen> {
     );
     if (!ok || !mounted || _busy.contains(v['id'])) return;
 
+    setState(() => _busy.add(v['id']));
+    final Json saved;
+    try {
+      saved = await Repos.admin.moderateVenue(v['id'], decision);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy.remove(v['id']));
+      showApiError(context, e);
+      return;
+    }
+
+    if (!mounted) return;
     setState(() {
-      _busy.add(v['id']);
+      _busy.remove(v['id']);
+      v.addAll(saved);
       v['status'] = decision;
       if (approve) widget.appState.venues.insert(0, v);
       widget.appState.adminPendingVenues.remove(v);
     });
-
-    try {
-      await ApiService.patch('/admin/venues/${v['id']}/status', {'status': decision});
-    } catch (_) {}
-
-    if (!mounted) return;
-    setState(() => _busy.remove(v['id']));
     widget.appState.pushNotification(
       title: approve ? 'Đã duyệt cơ sở "${v['name']}"' : 'Đã từ chối cơ sở "${v['name']}"',
       body: approve

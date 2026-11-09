@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -45,23 +45,22 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
     final post = entry['post'] as Map<String, dynamic>;
     if (_isHost(post) || _isFull(post) || _hasRequested(entry)) return;
 
+    final Json participant;
+    try {
+      participant = await Repos.match.join(post['id'], _app.userId);
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _participantsOf(entry).add({
-        'id': DateTime.now().millisecondsSinceEpoch % 100000,
-        'matchId': post['id'],
-        'userId': _app.userId,
-        'userName': _app.fullName.split('(').first.trim(),
-        'userSkill': _app.skillLevel,
-        'userPhone': _app.phone,
+        // Video giới thiệu trình độ lấy từ hồ sơ S29 để chủ kèo tham khảo
         if (_app.introVideoUrl.isNotEmpty) 'userVideoUrl': _app.introVideoUrl,
-        'status': 'PENDING',
+        ...participant,
       });
     });
-    try {
-      await ApiService.post('/matches/${post['id']}/join', {'userId': _app.userId});
-    } catch (_) {}
 
-    if (!mounted) return;
     _app.pushNotification(
       title: 'Đã gửi yêu cầu tham gia kèo',
       body: 'Chủ kèo "${post['title']}" sẽ xem trình độ (${SkillLevel.label(_app.skillLevel)}) và duyệt bạn.',
@@ -80,17 +79,23 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
       );
       return;
     }
-    setState(() {
-      part['status'] = 'APPROVED';
-      post['currentPlayers'] = UiFmt.toNum(post['currentPlayers'], 0).toInt() + 1;
-    });
+    final Json res;
     try {
-      await ApiService.patch('/matches/${post['id']}/participants/${part['id']}', {
-        'status': 'APPROVED',
-      });
-    } catch (_) {}
-
+      res = await Repos.match.reviewParticipant(post['id'], part['id'], 'APPROVED');
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return;
+    }
     if (!mounted) return;
+    setState(() {
+      part.addAll(asJson(res['participant']));
+      part['status'] = 'APPROVED';
+      final updatedPost = asJson(res['post']);
+      post['currentPlayers'] = updatedPost['currentPlayers'] ??
+          UiFmt.toNum(post['currentPlayers'], 0).toInt() + 1;
+      if (updatedPost['status'] != null) post['status'] = updatedPost['status'];
+    });
+
     _app.pushNotification(
       title: 'Đã duyệt ${part['userName']} vào kèo',
       body: 'Hiện có ${post['currentPlayers']}/${post['maxPlayers']} người.',

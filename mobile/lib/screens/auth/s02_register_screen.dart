@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -58,23 +58,26 @@ class _S02RegisterScreenState extends State<S02RegisterScreen> {
       return;
     }
     setState(() => _loading = true);
+    try {
+      final res = await Repos.auth.register(
+        fullName: _nameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        password: _passCtrl.text,
+        role: _selectedRole,
+        skillLevel: _selectedSkill,
+      );
+      widget.appState.lastDemoOtp = res['demoOtp']?.toString() ?? '';
+    } catch (e) {
+      // Email đã tồn tại / không kết nối được máy chủ: ở lại để người dùng sửa
+      if (mounted) {
+        setState(() => _loading = false);
+        showApiError(context, e);
+      }
+      return;
+    }
     widget.appState.lastOtpEmail = _emailCtrl.text.trim();
     widget.appState.lastOtpPurpose = 'REGISTER';
-    try {
-      final res = await ApiService.post('/auth/register', {
-        'fullName': _nameCtrl.text.trim(),
-        'email': _emailCtrl.text.trim(),
-        'phone': _phoneCtrl.text.trim(),
-        'password': _passCtrl.text,
-        'role': _selectedRole,
-        'skillLevel': _selectedSkill,
-      });
-      if (res is Map && res['demoOtp'] != null) {
-        widget.appState.lastDemoOtp = res['demoOtp'].toString();
-      }
-    } catch (_) {
-      widget.appState.lastDemoOtp = '482916';
-    }
     if (!mounted) return;
     setState(() => _loading = false);
     ScaffoldMessenger.of(context).showSnackBar(

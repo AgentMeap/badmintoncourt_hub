@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -63,8 +63,7 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
     }
     setState(() => _loading = true);
 
-    final newVenue = {
-      'id': DateTime.now().millisecondsSinceEpoch % 10000,
+    final newVenue = <String, dynamic>{
       'ownerId': widget.appState.userId,
       'ownerName': widget.appState.fullName.split('(').first.trim(),
       'name': _nameCtrl.text.trim(),
@@ -79,11 +78,17 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
       'status': 'PENDING',
     };
 
+    final Json saved;
     try {
-      await ApiService.post('/venues/owner', newVenue);
-    } catch (_) {}
+      saved = await Repos.venue.create(newVenue);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      showApiError(context, e);
+      return;
+    }
 
-    widget.appState.adminPendingVenues.insert(0, newVenue);
+    widget.appState.adminPendingVenues.insert(0, {...newVenue, ...saved});
     if (!mounted) return;
     setState(() => _loading = false);
     widget.appState.pushNotification(

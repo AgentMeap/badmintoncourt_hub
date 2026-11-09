@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -59,7 +59,6 @@ class _S28VenueReviewScreenState extends State<S28VenueReviewScreen> {
     }
     setState(() => _loading = true);
     final review = <String, dynamic>{
-      'id': DateTime.now().millisecondsSinceEpoch % 100000,
       'bookingCode': b['bookingCode'],
       'venueId': b['venueId'],
       'venueName': b['venueName'],
@@ -68,14 +67,19 @@ class _S28VenueReviewScreenState extends State<S28VenueReviewScreen> {
       'rating': _rating,
       'tags': _tags.toList(),
       'comment': _commentCtrl.text.trim(),
-      'createdAt': 'Vừa xong',
     };
+    final Json saved;
     try {
-      await ApiService.post('/reviews', review);
-    } catch (_) {}
+      saved = await Repos.review.create(review);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      showApiError(context, e);
+      return;
+    }
 
     if (!mounted) return;
-    _app.reviews.insert(0, review);
+    _app.reviews.insert(0, {...review, ...saved});
     b['reviewed'] = true;
     b['reviewRating'] = _rating;
     setState(() => _loading = false);

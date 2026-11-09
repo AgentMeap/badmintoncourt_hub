@@ -340,6 +340,9 @@ public class BookingPaymentController {
     @Transactional
     public ResponseEntity<?> rescheduleBooking(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Booking b = bookingRepository.findById(id).orElseThrow();
+        if (!"CONFIRMED".equals(b.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Chỉ vé đã thanh toán và chưa sử dụng mới được đổi lịch."));
+        }
         if (b.getRescheduledCount() >= 1) {
             return ResponseEntity.badRequest().body(Map.of("error", "Mỗi vé chỉ được phép đổi lịch tối đa 1 lần!"));
         }
@@ -352,6 +355,25 @@ public class BookingPaymentController {
             return ResponseEntity.status(409).body(Map.of("error", "Khung giờ mới đã có người đặt, vui lòng chọn khung giờ khác!"));
         }
 
+        // Chênh lệch giá giữa khung giờ mới và cũ: dương = khách bù thêm từ Ví, âm = hoàn vào Ví
+        double oldPrice = b.getTotalPrice();
+        double newPrice = body.get("totalPrice") != null
+                ? Double.parseDouble(String.valueOf(body.get("totalPrice")))
+                : oldPrice;
+        if (newPrice < 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Giá vé mới không hợp lệ."));
+        }
+        double diff = Math.round(newPrice - oldPrice);
+        User customer = b.getCustomerId() != null ? userRepository.findById(b.getCustomerId()).orElse(null) : null;
+        if (diff != 0 && customer == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy Ví của khách để xử lý chênh lệch giá."));
+        }
+        if (diff > 0 && customer.getWalletBalance() < diff) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Số dư Ví không đủ để bù chênh lệch " + (long) diff + "đ."
+            ));
+        }
+
         Court newCourt = courtRepository.findById(newCourtId).orElseThrow();
         b.setCourtId(newCourtId);
         b.setCourtName(newCourt.getName());
@@ -359,7 +381,21 @@ public class BookingPaymentController {
         b.setStartTime(newStart);
         b.setEndTime(newEnd);
         b.setRescheduledCount(b.getRescheduledCount() + 1);
+        b.setTotalPrice(oldPrice + diff);
         bookingRepository.save(b);
+
+        if (diff != 0) {
+            customer.setWalletBalance(customer.getWalletBalance() - diff);
+            userRepository.save(customer);
+            walletTransactionRepository.save(new WalletTransaction(
+                    customer.getId(),
+                    (diff > 0 ? "Bù chênh lệch đổi lịch vé " : "Hoàn chênh lệch đổi lịch vé ") + b.getBookingCode(),
+                    -diff,
+                    diff > 0 ? "BOOKING_PAYMENT" : "REFUND",
+                    customer.getWalletBalance(),
+                    LocalDateTime.now().format(FMT)
+            ));
+        }
 
         notificationService.notifyUser(
                 b.getCustomerId(),
@@ -369,7 +405,11 @@ public class BookingPaymentController {
                 "S13",
                 b.getId()
         );
-        return ResponseEntity.ok(b);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("booking", b);
+        res.put("priceDifference", diff);
+        if (customer != null) res.put("walletBalance", customer.getWalletBalance());
+        return ResponseEntity.ok(res);
     }
 
     // Luồng 4: Hủy sân & Tự động hoàn tiền về Ví nội bộ theo mốc thời gian (>=24h: 100%, 6-24h: 50%, <6h: 0%)
@@ -380,17 +420,24 @@ public class BookingPaymentController {
         if ("CANCELLED".equals(b.getStatus())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Vé đặt sân này đã được hủy trước đó."));
         }
+        if (List.of("CHECKED_IN", "COMPLETED", "EXPIRED").contains(b.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vé đã sử dụng hoặc đã hết hạn, không thể hủy."));
+        }
+        // Vé chưa thanh toán (HELD) thì hủy giữ chỗ, không phát sinh hoàn tiền
+        boolean paid = "CONFIRMED".equals(b.getStatus());
         String reason = String.valueOf(body.getOrDefault("reason", "Thay đổi kế hoạch cá nhân"));
 
         long hoursUntilPlay = calculateHoursUntilPlay(b.getPlayDate(), b.getStartTime());
         int refundPercent;
-        if (hoursUntilPlay >= 24) {
+        if (!paid) {
+            refundPercent = 0;
+        } else if (hoursUntilPlay >= 24) {
             refundPercent = 100;
         } else if (hoursUntilPlay >= 6) {
             refundPercent = 50;
         } else {
-            // Allow demo force 100% if requested, otherwise follow policy
-            boolean forceDemoRefund = Boolean.parseBoolean(String.valueOf(body.getOrDefault("demoFullRefund", "true")));
+            // Chỉ khi demo trên lớp mới gửi demoFullRefund=true để ép hoàn 100%
+            boolean forceDemoRefund = Boolean.parseBoolean(String.valueOf(body.getOrDefault("demoFullRefund", "false")));
             refundPercent = forceDemoRefund ? 100 : 0;
         }
 

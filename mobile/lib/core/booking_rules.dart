@@ -18,7 +18,7 @@ class BookingRules {
   static const int maxReschedules = 1;
   static const int rescheduleCutoffHours = 6;
 
-  static const _inactiveStatuses = {'CANCELLED', 'REFUNDED'};
+  static const _inactiveStatuses = {'CANCELLED', 'REFUNDED', 'EXPIRED'};
   static const _paidStatuses = {'CONFIRMED', 'PAID'};
   static const _usedStatuses = {'CHECKED_IN', 'COMPLETED'};
 
@@ -105,12 +105,22 @@ class BookingRules {
     final status = b['status']?.toString() ?? '';
     if (_inactiveStatuses.contains(status)) return false;
     if (status == 'HELD') {
-      final exp = b['holdExpiresAt'];
-      if (exp is int) {
+      final exp = holdExpiryMs(b['holdExpiresAt']);
+      if (exp != null) {
         return exp > (now ?? DateTime.now()).millisecondsSinceEpoch;
       }
     }
     return true;
+  }
+
+  /// Mốc hết hạn giữ chỗ (millis). Chấp nhận số millis hoặc chuỗi
+  /// "yyyy-MM-dd HH:mm:ss" do backend trả về. null nếu không đọc được.
+  static int? holdExpiryMs(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value.replaceFirst(' ', 'T'))?.millisecondsSinceEpoch;
+    }
+    return null;
   }
 
   /// Giờ -> 'MAINTENANCE' | 'BOOKED' của một sân trong một ngày.

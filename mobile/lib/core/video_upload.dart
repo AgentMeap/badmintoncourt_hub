@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
-import 'api_service.dart';
+import 'api/api_client.dart';
 import 'video_link.dart';
 import 'video_source_io.dart' if (dart.library.js_interop) 'video_source_web.dart';
 
@@ -90,7 +90,7 @@ class VideoUploadTask {
   }
 
   Future<String> start() async {
-    final uri = Uri.parse('${ApiService.baseUrl}/media/videos');
+    final uri = ApiClient.instance.uri('/media/videos');
     final multipart = http.MultipartRequest('POST', uri)
       ..files.add(http.MultipartFile('file', file.openRead(), bytes, filename: _fileName()));
 
@@ -98,6 +98,7 @@ class VideoUploadTask {
     final body = multipart.finalize();
     final total = multipart.contentLength;
     final req = http.StreamedRequest('POST', uri)
+      ..headers.addAll(ApiClient.instance.headers())
       ..headers.addAll(multipart.headers)
       ..contentLength = total;
     var sent = 0;

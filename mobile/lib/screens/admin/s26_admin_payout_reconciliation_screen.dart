@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -34,7 +34,17 @@ class _S26AdminPayoutReconciliationScreenState extends State<S26AdminPayoutRecon
     );
     if (!ok || !mounted || pr['status'] != 'PENDING') return;
 
+    final Json saved;
+    try {
+      saved = await Repos.admin.updatePayoutStatus(pr['id'], decision);
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return;
+    }
+
+    if (!mounted) return;
     setState(() {
+      pr.addAll(saved);
       pr['status'] = decision;
       if (!paid) {
         // Nhả các vé đã gắn vào yêu cầu này
@@ -46,11 +56,6 @@ class _S26AdminPayoutReconciliationScreenState extends State<S26AdminPayoutRecon
         }
       }
     });
-    try {
-      await ApiService.patch('/admin/payout-requests/${pr['id']}/status', {'status': decision});
-    } catch (_) {}
-
-    if (!mounted) return;
     widget.appState.pushNotification(
       title: paid ? 'Đã giải ngân #${pr['payoutCode']}' : 'Đã từ chối yêu cầu #${pr['payoutCode']}',
       body: paid ? 'Đã chuyển $net cho chủ sân.' : 'Chủ sân có thể kiểm tra lại và gửi yêu cầu mới.',

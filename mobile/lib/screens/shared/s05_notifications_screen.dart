@@ -117,7 +117,7 @@ class _S05NotificationsScreenState extends State<S05NotificationsScreen> {
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     onTap: () {
-                      n['isRead'] = true;
+                      widget.appState.markNotificationRead(n);
                       widget.appState.goTo(n['targetScreen']?.toString() ?? 'S06');
                     },
                     child: Padding(

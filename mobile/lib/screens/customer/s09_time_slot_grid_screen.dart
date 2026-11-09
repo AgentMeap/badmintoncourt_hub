@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -165,52 +165,38 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
     final end = _endOf(sorted);
     final total = BookingRules.priceOfRange(venue, _date, sorted).toDouble();
     assert(BookingRules.hoursOfRange(start, end).length == sorted.length);
+    // TODO(giai đoạn 2): lấy ID sân thật từ GET /venues/{id} thay vì suy ra từ thứ tự sân
     final courtId = _selectedCourtIndex + 1;
-    final stamp = DateTime.now().millisecondsSinceEpoch % 100000;
 
-    Map<String, dynamic> heldBooking = {
-      'id': stamp,
-      'bookingCode': 'BK-$stamp',
-      'venueId': venue['id'],
-      'venueName': venue['name'],
-      'courtId': courtId,
-      'courtName': 'Sân $courtId',
-      'customerId': _app.userId,
-      'customerName': _app.fullName,
-      'customerPhone': _app.phone,
-      'bookingType': 'ONLINE',
-      'playDate': _playDate,
-      'startTime': start,
-      'endTime': end,
-      'totalPrice': total,
-      'status': 'HELD',
-      'rescheduledCount': 0,
-      'qrCheckInToken': 'QR-BK-$stamp',
-      'paymentMethod': 'PENDING',
-    };
-
+    final Map<String, dynamic> heldBooking;
     try {
-      final res = await ApiService.post('/bookings/hold', {
-        'venueId': venue['id'],
-        'courtId': courtId,
-        'customerId': _app.userId,
-        'playDate': _playDate,
-        'startTime': start,
-        'endTime': end,
-        'totalPrice': total,
+      heldBooking = await Repos.booking.hold(
+        venueId: venue['id'],
+        courtId: courtId,
+        customerId: _app.userId,
+        playDate: _playDate,
+        startTime: start,
+        endTime: end,
+        totalPrice: total,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        // 409: khung giờ vừa có người khác giữ chỗ / đặt
+        if (e is ApiException && e.kind == ApiErrorKind.conflict) _selectedSlots.clear();
       });
-      if (res is Map) {
-        heldBooking = Map<String, dynamic>.from(res);
-      }
-    } catch (_) {}
+      showApiError(context, e);
+      return;
+    }
 
-    // Mốc hết hạn giữ chỗ để S10 đếm ngược đúng, không reset khi quay lại
-    heldBooking['holdExpiresAt'] ??= DateTime.now()
-        .add(const Duration(minutes: BookingRules.holdMinutes))
-        .millisecondsSinceEpoch;
+    // Mốc hết hạn giữ chỗ (millis) để S10 đếm ngược đúng, không reset khi quay lại
+    heldBooking['holdExpiresAt'] = BookingRules.holdExpiryMs(heldBooking['holdExpiresAt']) ??
+        DateTime.now().add(const Duration(minutes: BookingRules.holdMinutes)).millisecondsSinceEpoch;
 
     if (!mounted) return;
     setState(() => _submitting = false);
+    _app.upsertBooking(heldBooking);
     _app.selectedBooking = heldBooking;
     _app.goTo('S10');
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -167,30 +167,27 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
     setState(() => _busy = true);
 
     final newDateKey = BookingRules.dateKey(_newDate);
+    final Json res;
     try {
-      await ApiService.post('/bookings/${b['id']}/reschedule', {
-        'playDate': newDateKey,
-        'startTime': start,
-        'endTime': end,
-      });
-    } catch (_) {}
-
-    b['playDate'] = newDateKey;
-    b['startTime'] = start;
-    b['endTime'] = end;
-    b['totalPrice'] = newTotal.toDouble();
-    b['rescheduledCount'] = UiFmt.toNum(b['rescheduledCount'], 0).toInt() + 1;
-    if (diff != 0) {
-      _app.walletBalance -= diff.toDouble();
-      _app.walletTransactions.insert(0, {
-        'title': diff > 0
-            ? 'Bù chênh lệch đổi lịch #${b['bookingCode']}'
-            : 'Hoàn chênh lệch đổi lịch #${b['bookingCode']}',
-        'amount': -diff.toDouble(),
-        'type': diff > 0 ? 'BOOKING_PAYMENT' : 'REFUND',
-        'createdAt': 'Vừa xong',
-      });
+      // Máy chủ kiểm tra trùng giờ, bù / hoàn chênh lệch giá vào Ví và cập nhật vé
+      res = await Repos.booking.reschedule(
+        b['id'],
+        playDate: newDateKey,
+        startTime: start,
+        endTime: end,
+        totalPrice: newTotal,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showApiError(context, e);
+      return;
     }
+
+    b.addAll(res['booking'] is Map ? asJson(res['booking']) : res);
+    final balance = asNum(res['walletBalance']);
+    if (balance != null) _app.walletBalance = balance.toDouble();
+    _app.refreshWallet();
 
     if (!mounted) return;
     setState(() => _busy = false);
@@ -217,14 +214,15 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
     }
 
     final paid = BookingRules.isPaid(b);
-    final percent = BookingRules.refundPercent(b);
-    final refund = BookingRules.refundAmount(b);
+    // Ước tính để hiển thị; số tiền hoàn thực tế do máy chủ tính
+    final estPercent = BookingRules.refundPercent(b);
+    final estRefund = BookingRules.refundAmount(b);
     final ok = await _confirm(
       title: paid ? 'Hủy vé #${b['bookingCode']}?' : 'Hủy giữ chỗ?',
       message: !paid
           ? 'Vé chưa thanh toán nên không phát sinh hoàn tiền.'
-          : refund > 0
-              ? 'Bạn sẽ được hoàn ${UiFmt.vnd(refund)} ($percent%) vào Ví Cầu Lông. Thao tác này không thể hoàn tác.'
+          : estRefund > 0
+              ? 'Bạn sẽ được hoàn ${UiFmt.vnd(estRefund)} ($estPercent%) vào Ví Cầu Lông. Thao tác này không thể hoàn tác.'
               : 'Vé đã sát giờ chơi (dưới ${BookingRules.halfRefundHours} tiếng) nên KHÔNG được hoàn tiền. Thao tác này không thể hoàn tác.',
       confirmLabel: 'Hủy vé',
       destructive: true,
@@ -234,23 +232,25 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
     if (BookingRules.cancelBlockReason(b) != null) return;
     setState(() => _busy = true);
 
+    final Json res;
     try {
-      await ApiService.post('/bookings/${b['id']}/cancel', {
-        'reason': _reasonCtrl.text.trim(),
-        'refundPercent': percent,
-      });
-    } catch (_) {}
-
-    b['status'] = 'CANCELLED';
-    if (refund > 0) {
-      _app.walletBalance += refund.toDouble();
-      _app.walletTransactions.insert(0, {
-        'title': 'Hoàn tiền $percent% hủy vé #${b['bookingCode']}',
-        'amount': refund.toDouble(),
-        'type': 'REFUND',
-        'createdAt': 'Vừa xong',
-      });
+      // Máy chủ tự tính % hoàn tiền theo chính sách và cộng vào Ví
+      res = await Repos.booking.cancel(b['id'], reason: _reasonCtrl.text.trim());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showApiError(context, e);
+      return;
     }
+
+    b.addAll(asJson(res['booking']));
+    b['status'] = 'CANCELLED';
+    final refundInfo = asJson(res['refund']);
+    final refund = asNum(refundInfo['refundAmount']) ?? 0;
+    final percent = asNum(refundInfo['refundPercentage'])?.toInt() ?? 0;
+    final balance = asNum(res['walletBalance']);
+    if (refund > 0 && balance != null) _app.walletBalance = balance.toDouble();
+    _app.refreshWallet();
 
     if (!mounted) return;
     setState(() => _busy = false);

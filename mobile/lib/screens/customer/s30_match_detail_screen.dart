@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -42,24 +42,25 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     final parts = _participantsOf(entry);
     if (_joining || isHost || full || parts.any((p) => '${p['userId']}' == '${_app.userId}')) return;
 
+    setState(() => _joining = true);
+    final Json participant;
+    try {
+      participant = await Repos.match.join(post['id'], _app.userId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _joining = false);
+      showApiError(context, e);
+      return;
+    }
+    if (!mounted) return;
     setState(() {
-      _joining = true;
+      _joining = false;
       parts.add({
-        'id': DateTime.now().millisecondsSinceEpoch % 100000,
-        'matchId': post['id'],
-        'userId': _app.userId,
-        'userName': _app.fullName.split('(').first.trim(),
-        'userSkill': _app.skillLevel,
-        'userPhone': _app.phone,
+        // Video giới thiệu trình độ lấy từ hồ sơ S29 để chủ kèo tham khảo
         if (_app.introVideoUrl.isNotEmpty) 'userVideoUrl': _app.introVideoUrl,
-        'status': 'PENDING',
+        ...participant,
       });
     });
-    try {
-      await ApiService.post('/matches/${post['id']}/join', {'userId': _app.userId});
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() => _joining = false);
     _app.pushNotification(
       title: 'Đã gửi yêu cầu tham gia kèo',
       body: 'Chủ kèo "${post['title']}" sẽ xem trình độ (${SkillLevel.label(_app.skillLevel)}) và duyệt bạn.',

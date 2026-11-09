@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -56,30 +56,40 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
 
   Future<void> _simulatePayosWebhook(BuildContext context) async {
     if (_simulating) return;
-    setState(() => _simulating = true);
-    final b = appState.selectedBooking ?? appState.bookings.first;
     final p = appState.activePayosPayment;
-    if (p != null && p['payosOrderCode'] != null) {
-      try {
-        await ApiService.post('/payments/simulate-webhook/${p['payosOrderCode']}', {});
-      } catch (_) {}
+    final orderCode = p?['payosOrderCode'];
+    if (orderCode == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có mã đơn PayOS, vui lòng quay lại bước thanh toán.')),
+      );
+      return;
+    }
+    setState(() => _simulating = true);
+    final Json res;
+    try {
+      res = await Repos.booking.simulatePayosWebhook(orderCode);
+    } catch (e) {
+      if (!context.mounted) return;
+      setState(() => _simulating = false);
+      showApiError(context, e);
+      return;
     }
 
-    b['status'] = 'CONFIRMED';
-    b['paymentMethod'] = 'PAYOS_QR';
-    appState.bookings.removeWhere((item) => item['bookingCode'] == b['bookingCode']);
-    appState.bookings.insert(0, b);
+    final b = appState.selectedBooking ?? <String, dynamic>{};
+    final booking = {...b, ...asJson(res['booking'])};
+    appState.upsertBooking(booking);
+    appState.selectedBooking = booking;
 
     if (!context.mounted) return;
     appState.pushNotification(
       title: 'Thanh toán VietQR thành công',
-      body: 'Đơn #${b['bookingCode']} (${b['courtName']}, ${b['startTime']}-${b['endTime']}) đã được xác nhận.',
+      body: 'Đơn #${booking['bookingCode']} (${booking['courtName']}, ${booking['startTime']}-${booking['endTime']}) đã được xác nhận.',
       type: 'PAYMENT',
       targetScreen: 'S13',
       context: context,
     );
     // Kết thúc luồng đặt sân: Back từ vé không quay lại màn quét QR
-    appState.justPaidBookingCode = b['bookingCode']?.toString();
+    appState.justPaidBookingCode = booking['bookingCode']?.toString();
     appState.completeFlow('S13');
   }
 

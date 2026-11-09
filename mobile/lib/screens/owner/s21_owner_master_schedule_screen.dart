@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -92,10 +92,8 @@ class _S21OwnerMasterScheduleScreenState extends State<S21OwnerMasterScheduleScr
     if (!ok || !mounted) return;
     setState(() => _busy = true);
 
-    final stamp = DateTime.now().millisecondsSinceEpoch % 100000;
+    // Mã vé, mã QR và id do máy chủ cấp
     final entry = <String, dynamic>{
-      'id': stamp,
-      'bookingCode': '${isMaint ? "MT" : "WI"}-$stamp',
       'venueId': _venue['id'],
       'venueName': _venue['name'],
       'courtId': _court,
@@ -109,17 +107,22 @@ class _S21OwnerMasterScheduleScreenState extends State<S21OwnerMasterScheduleScr
       'endTime': end,
       'totalPrice': price.toDouble(),
       'status': 'CONFIRMED',
-      'qrCheckInToken': 'QR-${isMaint ? "MT" : "WI"}-$stamp',
       'paymentMethod': isMaint ? 'NONE' : 'CASH',
     };
 
+    final Json saved;
     try {
-      await ApiService.post('/owner/bookings/walk-in', entry);
-    } catch (_) {}
+      saved = await Repos.booking.createWalkIn(entry);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showApiError(context, e);
+      return;
+    }
 
     if (!mounted) return;
     setState(() {
-      _app.bookings.insert(0, entry);
+      _app.bookings.insert(0, {...entry, ...saved});
       _start = null;
       _busy = false;
     });
@@ -135,8 +138,11 @@ class _S21OwnerMasterScheduleScreenState extends State<S21OwnerMasterScheduleScr
     );
     if (!ok || !mounted) return;
     try {
-      await ApiService.post('/owner/bookings/check-in', {'code': b['qrCheckInToken'] ?? b['bookingCode']});
-    } catch (_) {}
+      await Repos.booking.checkIn('${b['qrCheckInToken'] ?? b['bookingCode']}');
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return;
+    }
     if (!mounted) return;
     setState(() => b['status'] = 'CHECKED_IN');
   }

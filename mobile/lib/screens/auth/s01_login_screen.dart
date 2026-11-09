@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -31,45 +31,42 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (_loading) return;
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty || _passCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập email và mật khẩu.')),
+      );
+      return;
+    }
     setState(() => _loading = true);
     try {
-      final res = await ApiService.post('/auth/login', {
-        'email': _emailCtrl.text.trim(),
-        'password': _passCtrl.text,
-      });
-      if (res is Map) {
-        widget.appState.userId = (res['id'] as num?)?.toInt() ?? 1;
-        widget.appState.fullName = res['fullName']?.toString() ?? 'Người dùng';
-        widget.appState.email = res['email']?.toString() ?? _emailCtrl.text;
-        widget.appState.role = res['role']?.toString() ?? 'CUSTOMER';
-        widget.appState.skillLevel = res['skillLevel']?.toString() ?? 'TB_YEU';
-        widget.appState.walletBalance = (res['walletBalance'] as num?)?.toDouble() ?? 350000;
+      final res = await Repos.auth.login(email, _passCtrl.text);
+      await widget.appState.applyAuthResponse(res);
+    } catch (e) {
+      // Sai mật khẩu, tài khoản bị khóa hoặc không kết nối được máy chủ: ở lại màn đăng nhập
+      if (mounted) {
+        setState(() => _loading = false);
+        showApiError(context, e);
       }
-    } catch (_) {
-      final mail = _emailCtrl.text.trim().toLowerCase();
-      if (mail.contains('owner')) {
-        widget.appState.role = 'COURT_OWNER';
-        widget.appState.fullName = 'Trần Chủ Sân (Court Owner)';
-      } else if (mail.contains('admin')) {
-        widget.appState.role = 'ADMIN';
-        widget.appState.fullName = 'Quản Trị Viên (Admin)';
-      } else {
-        widget.appState.role = 'CUSTOMER';
-        widget.appState.fullName = 'Nguyễn Hữu Đạt (Customer)';
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      return;
     }
-
-    if (widget.appState.role == 'COURT_OWNER') {
-      widget.appState.resetTo('S19');
-    } else if (widget.appState.role == 'ADMIN') {
-      widget.appState.resetTo('S24');
-    } else {
-      widget.appState.resetTo('S06');
-    }
-    widget.appState.saveSession();
+    if (!mounted) return;
+    setState(() => _loading = false);
+    widget.appState.resetTo(widget.appState.homeScreen);
     widget.appState.syncFromBackend();
+  }
+
+  /// Đăng nhập nhanh tài khoản demo theo vai trò.
+  Future<void> _demoLogin(String role) async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    // Thành công thì AppState đã chuyển sang màn chính (màn này bị gỡ khỏi cây widget)
+    final error = await widget.appState.switchDemoRole(role);
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    }
   }
 
   Widget _roleTile(BuildContext context, IconData icon, String label, String role) {
@@ -84,7 +81,7 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => widget.appState.switchDemoRole(role),
+          onTap: _loading ? null : () => _demoLogin(role),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: Column(

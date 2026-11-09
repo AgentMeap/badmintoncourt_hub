@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -92,13 +92,18 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
     final videoUrl = VideoLink.tryParse(_videoUrl)?.url ?? '';
     setState(() => _savingProfile = true);
     try {
-      await ApiService.patch('/auth/profile/${_app.userId}', {
+      await Repos.auth.updateProfile(_app.userId, {
         'fullName': name,
         'phone': phone,
         'skillLevel': _skill,
         'introVideoUrl': videoUrl,
       });
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingProfile = false);
+      showApiError(context, e);
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _app.fullName = '$name$_roleSuffix';
@@ -108,6 +113,7 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _videoUrl = videoUrl;
       _savingProfile = false;
     });
+    _app.saveSession();
     _toast('Đã lưu hồ sơ.');
   }
 
@@ -131,12 +137,18 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
     }
     setState(() => _savingPass = true);
     try {
-      await ApiService.post('/auth/change-password', {
-        'userId': _app.userId,
-        'currentPassword': current,
-        'newPassword': next,
-      });
-    } catch (_) {}
+      await Repos.auth.changePassword(
+        userId: _app.userId,
+        currentPassword: current,
+        newPassword: next,
+      );
+    } catch (e) {
+      // Sai mật khẩu hiện tại / lỗi kết nối: giữ nguyên nội dung đã nhập để sửa
+      if (!mounted) return;
+      setState(() => _savingPass = false);
+      showApiError(context, e);
+      return;
+    }
     if (!mounted) return;
     setState(() => _savingPass = false);
     _currentPassCtrl.clear();

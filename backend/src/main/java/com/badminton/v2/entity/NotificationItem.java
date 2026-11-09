@@ -1,5 +1,6 @@
 package com.badminton.v2.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 @Entity
@@ -46,7 +47,10 @@ public class NotificationItem {
     public void setTargetScreen(String targetScreen) { this.targetScreen = targetScreen; }
     public Long getReferenceId() { return referenceId; }
     public void setReferenceId(Long referenceId) { this.referenceId = referenceId; }
+    // Giữ tên khóa JSON "isRead" như app Flutter đọc (mặc định Jackson đặt là "read")
+    @JsonProperty("isRead")
     public boolean isRead() { return isRead; }
+    @JsonProperty("isRead")
     public void setRead(boolean read) { isRead = read; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }

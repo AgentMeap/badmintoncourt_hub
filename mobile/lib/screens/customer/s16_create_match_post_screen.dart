@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -66,7 +66,6 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
     final video = VideoLink.tryParse(_videoUrl);
 
     final newPost = <String, dynamic>{
-      'id': DateTime.now().millisecondsSinceEpoch % 10000,
       'hostId': widget.appState.userId,
       'hostName': widget.appState.fullName.split('(').first.trim(),
       'hostSkill': widget.appState.skillLevel,
@@ -89,13 +88,20 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
       if (widget.appState.introVideoUrl.isNotEmpty) 'hostVideoUrl': widget.appState.introVideoUrl,
     };
 
+    final Json saved;
     try {
-      final res = await ApiService.post('/matches', newPost);
-      if (res is Map && res['id'] != null) newPost['id'] = res['id'];
-    } catch (_) {}
+      saved = await Repos.match.create(newPost);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      showApiError(context, e);
+      return;
+    }
 
+    // Dữ liệu máy chủ là chuẩn; giữ các trường máy chủ chưa lưu (video chủ kèo) để hiển thị ngay
+    final post = {...newPost, ...saved};
     widget.appState.matches.insert(0, {
-      'post': newPost,
+      'post': post,
       'participants': <Map<String, dynamic>>[],
     });
 
@@ -103,7 +109,7 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
     setState(() => _loading = false);
     widget.appState.pushNotification(
       title: 'Đã đăng kèo giao lưu',
-      body: '${newPost['title']} tại ${newPost['venueName']} (${newPost['courtName']})'
+      body: '${post['title']} tại ${post['venueName']} (${post['courtName']})'
           '${video != null ? ' kèm video' : ''}.',
       type: 'MATCHMAKING',
       targetScreen: 'S15',

@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
-import 'api_service.dart';
+import 'api/api_client.dart';
 import 'video_source_io.dart' if (dart.library.js_interop) 'video_source_web.dart';
 
 /// Video của hồ sơ người chơi (S29/S18) và kèo giao lưu (S16/S15/S30).
@@ -40,7 +40,7 @@ class VideoLink {
 
   /// Địa chỉ dùng để phát / mở: video tải lên được ghép với địa chỉ backend.
   String get playableUrl => switch (kind) {
-        VideoLinkKind.uploaded => '${ApiService.baseUrl.replaceFirst(RegExp(r'/api/?$'), '')}$url',
+        VideoLinkKind.uploaded => '${ApiClient.origin}$url',
         VideoLinkKind.local => url.substring(localPrefix.length),
         _ => url,
       };

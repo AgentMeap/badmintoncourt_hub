@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -60,60 +60,48 @@ class _S10CheckoutScreenState extends State<S10CheckoutScreen> {
     return '$m:$s';
   }
 
-  Future<void> _startPayosQr() async {
+  Future<void> _startPayosQr(BuildContext context) async {
     final b = appState.selectedBooking ?? appState.bookings.first;
-    final orderCode = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    Map<String, dynamic> payment = {
-      'payosOrderCode': orderCode,
-      'amount': b['totalPrice'],
-      'qrCodeData': 'PAYOS-VIETQR-${b['bookingCode']}-$orderCode',
-      'status': 'PENDING',
-    };
-
     try {
-      final res = await ApiService.post('/payments/create-payos', {
-        'bookingId': b['id'],
-      });
-      if (res is Map && res['payment'] is Map) {
-        payment = Map<String, dynamic>.from(res['payment']);
-      }
-    } catch (_) {}
-
-    appState.activePayosPayment = payment;
+      final res = await Repos.booking.createPayos(b['id']);
+      final payment = asJson(res['payment']);
+      if (payment['payosOrderCode'] == null) throw ApiException.invalidResponse();
+      appState.activePayosPayment = payment;
+    } catch (e) {
+      if (context.mounted) showApiError(context, e);
+      return;
+    }
     appState.goTo('S11');
   }
 
   Future<void> _payWithWallet(BuildContext context) async {
     final b = appState.selectedBooking ?? appState.bookings.first;
-    final price = (b['totalPrice'] as num).toDouble();
-    if (appState.walletBalance < price) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Số dư Ví không đủ. Vui lòng chọn thanh toán VietQR.')),
-      );
+    final Json res;
+    try {
+      // Máy chủ kiểm tra số dư, trừ Ví, xác nhận vé và ghi giao dịch trong cùng một giao tác
+      res = await Repos.booking.payWithWallet(bookingId: b['id'], userId: appState.userId);
+    } catch (e) {
+      if (context.mounted) showApiError(context, e);
       return;
     }
 
-    appState.walletBalance -= price;
-    b['status'] = 'CONFIRMED';
-    b['paymentMethod'] = 'WALLET';
-    appState.bookings.removeWhere((item) => item['bookingCode'] == b['bookingCode']);
-    appState.bookings.insert(0, b);
-    appState.walletTransactions.insert(0, {
-      'title': 'Thanh toán đặt sân ${b['bookingCode']}',
-      'amount': -price,
-      'type': 'BOOKING_PAYMENT',
-      'createdAt': 'Vừa xong',
-    });
+    final booking = {...b, ...asJson(res['booking'])};
+    final balance = asNum(res['walletBalance']);
+    if (balance != null) appState.walletBalance = balance.toDouble();
+    appState.upsertBooking(booking);
+    appState.selectedBooking = booking;
+    appState.refreshWallet();
 
+    if (!context.mounted) return;
     appState.pushNotification(
       title: 'Thanh toán bằng Ví Cầu Lông thành công',
-      body: 'Vé ${b['bookingCode']} (${b['courtName']}, ${b['startTime']}-${b['endTime']}) đã xác nhận.',
+      body: 'Vé ${booking['bookingCode']} (${booking['courtName']}, ${booking['startTime']}-${booking['endTime']}) đã xác nhận.',
       type: 'PAYMENT',
       targetScreen: 'S13',
       context: context,
     );
     // Kết thúc luồng đặt sân: Back từ vé không quay lại màn thanh toán
-    appState.justPaidBookingCode = b['bookingCode']?.toString();
+    appState.justPaidBookingCode = booking['bookingCode']?.toString();
     appState.completeFlow('S13');
   }
 
@@ -121,7 +109,7 @@ class _S10CheckoutScreenState extends State<S10CheckoutScreen> {
     if (_processing || _remaining == 0) return;
     setState(() => _processing = true);
     if (_method == _PayMethod.payos) {
-      await _startPayosQr();
+      await _startPayosQr(context);
     } else {
       await _payWithWallet(context);
     }

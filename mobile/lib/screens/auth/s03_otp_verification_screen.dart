@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -58,101 +58,126 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
       return;
     }
     setState(() => _loading = true);
-
+    final app = widget.appState;
     try {
-      await ApiService.post('/auth/verify-otp', {
-        'email': widget.appState.lastOtpEmail,
-        'otpCode': code,
-      });
-    } catch (_) {}
+      final withdraw = app.pendingWithdrawDraft;
+      final payout = app.pendingPayoutDraft;
+      if (app.lastOtpPurpose == 'WITHDRAW_WALLET' && withdraw != null) {
+        await _withdraw(code, withdraw);
+      } else if (app.lastOtpPurpose == 'PAYOUT' && payout != null) {
+        await _requestPayout(code, payout);
+      } else if (app.lastOtpPurpose == 'RESET_PASSWORD') {
+        await _resetPassword(code);
+      } else {
+        await _verifyAccount(code);
+      }
+    } catch (e) {
+      // Sai / hết hạn OTP, số dư không đủ, mất kết nối...: ở lại màn OTP để thử lại
+      if (mounted) showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
+  /// Rút tiền Ví (từ S27): máy chủ kiểm tra số dư, trừ ví và ghi giao dịch.
+  Future<void> _withdraw(String code, Map<String, dynamic> w) async {
+    final app = widget.appState;
+    await Repos.auth.verifyOtp(app.lastOtpEmail, code);
+    final amount = asNum(w['amount']) ?? 0;
+    final res = await Repos.wallet.withdraw(
+      userId: app.userId,
+      amount: amount,
+      bankName: '${w['bankName']}',
+      bankAccountNumber: '${w['bankAccountNumber']}',
+      bankAccountHolder: '${w['bankAccountHolder']}',
+    );
+    final balance = asNum(res['walletBalance']);
+    if (balance != null) app.walletBalance = balance.toDouble();
+    app.pendingWithdrawDraft = null;
+    app.refreshWallet();
     if (!mounted) return;
-    setState(() => _loading = false);
+    app.pushNotification(
+      title: 'Đã gửi yêu cầu rút ${UiFmt.vnd(amount)}',
+      body: 'Tiền sẽ về ${w['bankName']} • ${w['bankAccountNumber']} trong 1 - 2 ngày làm việc.',
+      type: 'PAYMENT',
+      targetScreen: 'S18',
+      context: context,
+    );
+    // Quay về Ví, bỏ S27 và màn OTP khỏi lịch sử
+    app.completeFlow('S18', flowStart: 'S27');
+  }
 
-    // Rút tiền Ví (từ S27): kiểm tra lại số dư, trừ ví, ghi lịch sử giao dịch
-    if (widget.appState.lastOtpPurpose == 'WITHDRAW_WALLET' &&
-        widget.appState.pendingWithdrawDraft != null) {
-      final w = widget.appState.pendingWithdrawDraft!;
-      final amount = (w['amount'] as num).toDouble();
-      if (amount > widget.appState.walletBalance) {
-        widget.appState.pendingWithdrawDraft = null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Số dư đã thay đổi và không đủ để rút. Vui lòng thử lại.')),
-        );
-        widget.appState.completeFlow('S18', flowStart: 'S27');
-        return;
-      }
-      try {
-        await ApiService.post('/wallet/withdraw', {
-          'userId': widget.appState.userId,
-          'amount': amount,
-          'bankName': w['bankName'],
-          'bankAccountNumber': w['bankAccountNumber'],
-          'bankAccountHolder': w['bankAccountHolder'],
-        });
-      } catch (_) {}
-      if (!mounted) return;
-      widget.appState.walletBalance -= amount;
-      widget.appState.walletTransactions.insert(0, {
-        'title': 'Rút về ${w['bankName']} • ${w['bankAccountNumber']}',
-        'amount': -amount,
-        'type': 'WITHDRAW',
-        'createdAt': 'Vừa xong',
-      });
-      widget.appState.pendingWithdrawDraft = null;
-      widget.appState.pushNotification(
-        title: 'Đã gửi yêu cầu rút ${UiFmt.vnd(amount)}',
-        body: 'Tiền sẽ về ${w['bankName']} • ${w['bankAccountNumber']} trong 1 - 2 ngày làm việc.',
-        type: 'PAYMENT',
-        targetScreen: 'S18',
-        context: context,
+  /// Giải ngân cho chủ sân (từ S23): máy chủ tự xác thực OTP trong cùng yêu cầu.
+  Future<void> _requestPayout(String code, Map<String, dynamic> draft) async {
+    final app = widget.appState;
+    final saved = await Repos.owner.createPayoutRequest(
+      ownerId: app.userId,
+      venueId: draft['venueId'] ?? 1,
+      grossAmount: asNum(draft['grossAmount']) ?? 0,
+      bankName: '${draft['bankName']}',
+      bankAccountNumber: '${draft['bankAccountNumber']}',
+      bankAccountHolder: '${draft['bankAccountHolder']}',
+      otpCode: code,
+    );
+    // Giữ danh sách vé của bản nháp để không tính doanh thu 2 lần
+    final request = {...draft, ...saved};
+    app.payoutRequests.insert(0, request);
+    app.pendingPayoutDraft = null;
+    final codes = (draft['bookingCodes'] as List?)?.map((e) => '$e').toSet() ?? const <String>{};
+    for (final b in app.bookings) {
+      if (codes.contains('${b['bookingCode']}')) b['payoutCode'] = request['payoutCode'];
+    }
+    if (!mounted) return;
+    app.pushNotification(
+      title: 'Đã xác thực OTP & gửi yêu cầu giải ngân #${request['payoutCode']}',
+      body: 'Số tiền thực nhận ${UiFmt.vnd(asNum(request['netPayoutAmount']) ?? 0)} '
+          'đang chờ Admin duyệt chuyển khoản.',
+      type: 'PAYMENT',
+      targetScreen: 'S23',
+      context: context,
+    );
+    app.goTo('S23');
+  }
+
+  /// Quên mật khẩu (từ S04): đặt mật khẩu mới bằng OTP rồi quay về đăng nhập.
+  Future<void> _resetPassword(String code) async {
+    final app = widget.appState;
+    final newPassword = app.pendingResetPassword;
+    if (newPassword == null || newPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thiếu mật khẩu mới, vui lòng nhập lại ở bước trước.')),
       );
-      // Quay về Ví, bỏ S27 và màn OTP khỏi lịch sử
-      widget.appState.completeFlow('S18', flowStart: 'S27');
       return;
     }
+    await Repos.auth.resetPassword(
+      email: app.lastOtpEmail,
+      otpCode: code,
+      newPassword: newPassword,
+    );
+    app.pendingResetPassword = null;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.')),
+    );
+    app.resetTo('S01');
+  }
 
-    if (widget.appState.lastOtpPurpose == 'PAYOUT' && widget.appState.pendingPayoutDraft != null) {
-      final draft = widget.appState.pendingPayoutDraft!;
-      try {
-        await ApiService.post('/owner/payout-requests', {
-          'ownerId': draft['ownerId'] ?? widget.appState.userId,
-          'venueId': draft['venueId'] ?? 1,
-          'grossAmount': draft['grossAmount'],
-          'bankName': draft['bankName'],
-          'bankAccountNumber': draft['bankAccountNumber'],
-          'bankAccountHolder': draft['bankAccountHolder'],
-          'otpCode': _otpCtrl.text.trim(),
-        });
-      } catch (_) {}
-      if (!mounted) return;
-      widget.appState.payoutRequests.insert(0, draft);
-      widget.appState.pendingPayoutDraft = null;
-      // Đánh dấu các vé đã đưa vào yêu cầu giải ngân để không bị tính 2 lần
-      final codes = (draft['bookingCodes'] as List?)?.map((e) => '$e').toSet() ?? const <String>{};
-      for (final b in widget.appState.bookings) {
-        if (codes.contains('${b['bookingCode']}')) b['payoutCode'] = draft['payoutCode'];
-      }
-      widget.appState.pushNotification(
-        title: 'Đã xác thực OTP & gửi yêu cầu giải ngân #${draft['payoutCode']}',
-        body: 'Số tiền thực nhận ${draft['netPayoutAmount']}đ đang chờ Admin duyệt chuyển khoản.',
-        type: 'PAYMENT',
-        targetScreen: 'S23',
-        context: context,
-      );
-      widget.appState.goTo('S23');
-      return;
-    }
-
-    widget.appState.pushNotification(
+  /// Xác thực email sau đăng ký: máy chủ trả về phiên đăng nhập của tài khoản mới.
+  Future<void> _verifyAccount(String code) async {
+    final app = widget.appState;
+    final res = await Repos.auth.verifyOtp(app.lastOtpEmail, code);
+    if (res['id'] != null) await app.applyAuthResponse(res);
+    if (!mounted) return;
+    app.pushNotification(
       title: 'Xác thực OTP thành công',
-      body: 'Tài khoản ${widget.appState.lastOtpEmail} đã được xác thực qua Email OTP.',
+      body: 'Tài khoản ${app.lastOtpEmail} đã được xác thực qua Email OTP.',
       type: 'SYSTEM',
-      targetScreen: 'S06',
+      targetScreen: app.homeScreen,
       context: context,
     );
     // Xác thực xong: bắt đầu phiên mới, Back không quay lại màn OTP / đăng ký
-    widget.appState.resetTo(widget.appState.role == 'COURT_OWNER' ? 'S19' : 'S06');
+    app.resetTo(app.homeScreen);
+    app.syncFromBackend();
   }
 
   @override

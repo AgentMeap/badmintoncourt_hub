@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -66,9 +66,16 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
     final b = _found;
     if (b == null || _error != null || _busy) return;
     setState(() => _busy = true);
+    final Json res;
     try {
-      await ApiService.post('/owner/bookings/check-in', {'code': _codeCtrl.text.trim()});
-    } catch (_) {}
+      res = await Repos.booking.checkIn(_codeCtrl.text.trim());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showApiError(context, e);
+      return;
+    }
+    b.addAll(asJson(res['booking']));
     b['status'] = 'CHECKED_IN';
 
     if (!mounted) return;

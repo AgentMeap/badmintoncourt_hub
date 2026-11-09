@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -103,13 +103,15 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
     });
     _scrollToEnd();
 
+    // Không gọi được máy chủ thì trả lời bằng dữ liệu đang có trên máy (chỉ đọc, không đổi dữ liệu)
     String reply = _fallbackReply();
     try {
-      final res = await ApiService.post('/ai/chat', {'message': text.trim()});
-      if (res is Map && res['reply'] != null) {
-        reply = res['reply'].toString();
-      }
-    } catch (_) {}
+      final res = await Repos.ai.chat(text.trim());
+      final serverReply = res['reply']?.toString();
+      if (serverReply != null && serverReply.isNotEmpty) reply = serverReply;
+    } catch (e) {
+      debugPrint('[S17] $e');
+    }
 
     if (!mounted) return;
     final messageIndex = _messages.length;

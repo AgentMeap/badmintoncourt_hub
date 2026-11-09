@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:badminton_v2_mobile/core/api_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -43,19 +43,20 @@ class _S04ForgotPasswordScreenState extends State<S04ForgotPasswordScreen> {
     }
 
     setState(() => _loading = true);
+    try {
+      final res = await Repos.auth.sendOtp(email, 'RESET_PASSWORD');
+      widget.appState.lastDemoOtp = res['demoOtp']?.toString() ?? '';
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        showApiError(context, e);
+      }
+      return;
+    }
     widget.appState.lastOtpEmail = email;
     widget.appState.lastOtpPurpose = 'RESET_PASSWORD';
-    try {
-      final res = await ApiService.post('/auth/send-otp', {
-        'email': email,
-        'purpose': 'RESET_PASSWORD',
-      });
-      if (res is Map && res['demoOtp'] != null) {
-        widget.appState.lastDemoOtp = res['demoOtp'].toString();
-      }
-    } catch (_) {
-      widget.appState.lastDemoOtp = '123456';
-    }
+    // S03 gửi mật khẩu mới cùng mã OTP tới /auth/reset-password
+    widget.appState.pendingResetPassword = _newPassCtrl.text;
     if (!mounted) return;
     setState(() => _loading = false);
     widget.appState.goTo('S03');
