@@ -18,6 +18,13 @@ enum TravelMode {
   final String webMode;
   final String label;
   final IconData icon;
+
+  /// Tên phương tiện cho API tìm đường của backend (`/api/routes?mode=`).
+  String get apiName => switch (this) {
+        TravelMode.motorbike => 'motorbike',
+        TravelMode.car => 'car',
+        TravelMode.walk => 'walk',
+      };
 }
 
 /// Mở Google Maps để dẫn đường từng ngã rẽ (có giọng nói, tự tìm lại đường khi đi sai).

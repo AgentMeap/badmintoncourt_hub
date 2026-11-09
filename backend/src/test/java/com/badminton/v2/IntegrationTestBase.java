@@ -52,6 +52,8 @@ public abstract class IntegrationTestBase {
         // Không gọi Gemini thật khi test (máy dev có thể đang đặt GEMINI_API_KEY)
         registry.add("app.gemini.api-key", () -> "");
         registry.add("app.demo-mode", () -> "true");
+        // Không tải bản đồ đường OSM khi chạy test (RouteApiTest tự nạp lưới đường giả)
+        registry.add("app.routing.enabled", () -> "false");
     }
 
     @Autowired protected MockMvc mvc;

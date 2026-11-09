@@ -324,6 +324,8 @@ mvn test
 | `BookingFlowTest` | Giữ chỗ (giá do máy chủ tính); trùng giờ 409; trả chỗ (chỉ chủ vé); khung giờ sai 400; thanh toán Ví trừ đúng số dư, không trả 2 lần, Ví không đủ 400; vé riêng tư |
 | `AiAssistantTest` | Câu hỏi đúng phạm vi; thẻ dựng từ dữ liệu thật; chặn câu ngoài lề / jailbreak; 300 ký tự; giới hạn 5 tin/phút (429 + `Retry-After`); lịch sử phiên; chỉ người chơi dùng được |
 | `OwnerAdminTest` | Dashboard chủ sân / Admin; lịch theo ngày + phân quyền; vãng lai (giá máy chủ, ngoài giờ 400, trùng 409); kiểm duyệt cơ sở; duyệt giải ngân 1 lần; giải ngân vượt doanh thu 400 |
+| `RoutingCoreTest` | Lõi tìm đường: lọc đường cấm / trùng, xe máy không vào cao tốc, đường một chiều, chỉ dẫn rẽ tiếng Việt, lưu / đọc file đồ thị, đọc dữ liệu Overpass |
+| `RouteApiTest` | API tìm đường: 503 khi chưa có bản đồ, tham số sai 400, phân quyền, trả tuyến trên lưới đường giả, ngoài vùng 422 |
 | `AiGuardrailTest`, `BookingRulesTest` | Test đơn vị không cần Spring: lớp chặn câu hỏi AI, luật giá giờ vàng, giờ mở cửa, giữ chỗ hết hạn |
 | `BadmintonV2IntegrationTest` | Kịch bản xuyên suốt 6 module (gọi thẳng controller) |
 
@@ -337,6 +339,7 @@ flutter test
 | File test | Kiểm tra |
 | :--- | :--- |
 | `booking_rules_test.dart` | Giờ vàng, giá theo khung giờ, giờ mở cửa, lịch chiếm sân, giữ chỗ hết hạn, % hoàn tiền, điều kiện hủy / đổi lịch, số liệu tài chính chủ sân |
+| `route_plan_test.dart` | Đọc tuyến đường từ máy chủ, định dạng quãng đường / thời gian |
 | `json_test.dart` | Đọc JSON sai kiểu không làm app lỗi |
 | `day_bar_chart_test.dart` | Biểu đồ 7 ngày (S19, S24): đủ cột, nhãn, không tràn ở màn hẹp |
 | `widget_test.dart` | Mở **toàn bộ 30 màn** theo đúng vai trò (Người chơi / Chủ sân / Admin) ở 4 kích thước `360x640`, `640x360`, `800x1280`, `1280x800` và bắt mọi lỗi tràn / bố cục |
@@ -355,6 +358,7 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`. Gọi `POST /api/auth/login
 | Sân | `GET /api/venues`, `GET /api/venues/{id}?playDate=` | Danh sách sân, bảng giá, lịch đã đặt trong ngày |
 | Đặt sân | `POST /api/bookings/hold`, `POST /api/bookings/{id}/release`, `GET /api/bookings/{id}`, `POST /api/bookings/{id}/reschedule`, `POST /api/bookings/{id}/cancel` | Giữ chỗ 5 phút, giá do máy chủ tính |
 | Thanh toán | `POST /api/payments/pay-with-wallet`, `POST /api/payments/create-payos`, `GET /api/payments/{orderCode}/status` | VietQR PayOS hoặc Ví |
+| Tìm đường | `GET /api/routes?fromLat&fromLng&venueId&mode=motorbike\|car\|walk`, `GET /api/routes/status`, `POST /api/admin/routing/reimport` | A* trên bản đồ đường OSM TP.HCM tự dựng ở backend |
 | Trợ lý AI | `POST /api/ai/chat`, `GET /api/ai/sessions/current`, `POST /api/ai/sessions` | Chỉ người chơi; ≤ 300 ký tự; 5 tin/phút, 30 tin/ngày |
 | Chủ sân | `GET /api/owner/{id}/dashboard`, `GET /api/owner/venues/{venueId}/bookings?date=`, `POST /api/owner/bookings/walk-in`, `POST /api/owner/bookings/check-in`, `POST /api/owner/payout-requests` | Chỉ chủ của cơ sở hoặc Admin |
 | Admin | `GET /api/admin/dashboard`, `PATCH /api/admin/venues/{id}/status`, `PATCH /api/admin/users/{id}/toggle-active`, `PATCH /api/admin/payout-requests/{id}/status` | Từ chối cần `reason` |
@@ -367,7 +371,16 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`. Gọi `POST /api/auth/login
 | `FIREBASE_PROJECT_ID` | (trống) | Bật đăng nhập Google (kiểm tra Firebase ID token) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | (trống), `gemini-2.5-flash` | Trợ lý AI dùng Gemini; để trống thì dùng bộ trả lời theo luật |
 | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | (trống) | VietQR PayOS thật; để trống thì dùng chế độ giả lập |
+| `ROUTING_ENABLED`, `ROUTING_AUTO_IMPORT` | `true`, `true` | Bật tìm đường; lần đầu tự tải bản đồ đường TP.HCM (xem 9.4) |
+| `ROUTING_DATA_DIR`, `ROUTING_BBOX`, `OVERPASS_URL` | `./data/routing`, `10.60,106.40,11.10,106.95`, overpass-api.de | Nơi lưu đồ thị, vùng phủ (nam,tây,bắc,đông), máy chủ Overpass |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | (trống) | Gửi OTP qua Gmail |
+
+### 9.4. Tìm đường theo đường phố (tự cài đặt, không dùng dịch vụ ngoài)
+- Package `backend/.../routing`: đọc đường phố OpenStreetMap (nút giao, đường một chiều, cấm xe máy...), dựng **đồ thị có hướng** dạng mảng nén (CSR), tìm **đường nhanh nhất bằng A\*** (chi phí = thời gian theo loại đường; hàm ước lượng = khoảng cách chim bay / tốc độ lớn nhất), sinh **chỉ dẫn rẽ tiếng Việt** từ góc rẽ tại giao lộ.
+- **Lần đầu chạy backend** sẽ tự tải đường phố TP.HCM qua Overpass API theo từng ô 0,1° (chạy nền, khoảng 15–30 phút tuỳ mạng), dựng đồ thị và lưu `backend/data/routing/hcm-roads.graph`. Các lần sau chỉ đọc file trong vài giây. Theo dõi tiến độ: `GET /api/routes/status`.
+- Trong lúc chuẩn bị (hoặc mất mạng), app vẫn chạy: bản đồ S07 hiện nét đứt hướng chim bay.
+- Muốn tiết kiệm thời gian cho cả nhóm: 1 người tải xong, chia sẻ file `hcm-roads.graph` để các bạn chép vào `backend/data/routing/` (file đã nằm trong `.gitignore`).
+- Hạn chế: thời gian là ước tính theo tốc độ trung bình × hệ số đông xe 1,15, chưa tính kẹt xe thời gian thực; dữ liệu đường cập nhật khi Admin gọi `POST /api/admin/routing/reimport`.
 
 ### 9.3. Cấu hình Mobile
 - Đăng nhập Google: xem `mobile/config/README_FIREBASE.md`, chạy với `--dart-define-from-file=config/firebase.json`.

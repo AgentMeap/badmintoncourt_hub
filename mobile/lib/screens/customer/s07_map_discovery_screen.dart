@@ -4,14 +4,18 @@ import 'package:latlong2/latlong.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/directions.dart';
 import 'package:badminton_v2_mobile/core/location_service.dart';
+import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
+import 'package:badminton_v2_mobile/core/route_plan.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S07: OpenStreetMap Discovery Screen (Module 2)
 // - Vị trí người dùng lấy từ GPS thật (geolocator); chưa có quyền / tắt GPS thì dùng
 //   Làng Đại học và báo rõ trên màn hình kèm nút "Bật vị trí".
 // - Khoảng cách và lọc bán kính tính từ vị trí đó (đường chim bay, latlong2).
+// - Tuyến theo đường phố: backend tìm đường bằng A* trên bản đồ OpenStreetMap TP.HCM
+//   (GET /api/routes), vẽ nét liền + quãng đường, thời gian, danh sách chỗ rẽ.
+//   Bản đồ đường chưa sẵn sàng / ngoài vùng / mất mạng -> nét đứt hướng chim bay.
 // - "Dẫn đường" mở Google Maps vào thẳng chế độ dẫn đường (xe máy / ô tô / đi bộ).
-//   Nét đứt trên bản đồ chỉ là hướng đường chim bay; tuyến theo đường phố sẽ làm ở bước sau.
 // - Có ghi công OpenStreetMap (bắt buộc theo chính sách sử dụng tile của OSM).
 class S07MapDiscoveryScreen extends StatefulWidget {
   final AppState appState;
@@ -28,6 +32,14 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
   Map<String, dynamic>? _focusedVenue;
   bool _showRoute = false;
   bool _locating = false;
+
+  // Tuyến theo đường phố
+  TravelMode _mode = TravelMode.motorbike;
+  RoutePlan? _plan;
+  String? _planKey;
+  String? _planError;
+  bool _planLoading = false;
+  int _planSeq = 0;
 
   /// Bán kính lọc (km); vô cực = tất cả.
   double _maxRadiusKm = double.infinity;
@@ -68,20 +80,19 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
       final id = '${_focusedVenue?['id']}';
       _focusedVenue = _app.venues.where((v) => '${v['id']}' == id).firstOrNull ?? _nearestVenue();
     });
-    if (_mapReady) {
-      final f = _focusedVenue;
-      if (_showRoute && f != null) {
-        _fitRoute(f);
-      } else {
-        _map.move(_userGps, 14);
-      }
+    final f = _focusedVenue;
+    if (_showRoute && f != null) {
+      _loadRoute(f);
+    } else if (_mapReady) {
+      _map.move(_userGps, 14);
     }
   }
 
   void _fitRoute(Map<String, dynamic> venue) {
     if (!_mapReady) return;
+    final plan = _plan;
     _map.fitCamera(CameraFit.coordinates(
-      coordinates: [_userGps, _posOf(venue)],
+      coordinates: plan != null && _planKey == _keyFor(venue) ? plan.points : [_userGps, _posOf(venue)],
       padding: const EdgeInsets.fromLTRB(48, 72, 48, 48),
       maxZoom: 16,
     ));
@@ -92,7 +103,147 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
       _focusedVenue = v;
       _showRoute = showRoute;
     });
-    if (showRoute) _fitRoute(v);
+    if (showRoute) {
+      _fitRoute(v);
+      _loadRoute(v);
+    }
+  }
+
+  /// Khoá tuyến: cùng sân + phương tiện + vị trí (làm tròn ~100 m) thì không tải lại.
+  String _keyFor(Map<String, dynamic> venue) =>
+      '${venue['id']}|${_mode.apiName}|${_app.userLatitude.toStringAsFixed(3)},${_app.userLongitude.toStringAsFixed(3)}';
+
+  /// Hỏi backend tuyến theo đường phố tới [venue]; lỗi thì giữ nét đứt chim bay.
+  Future<void> _loadRoute(Map<String, dynamic> venue) async {
+    final key = _keyFor(venue);
+    if (key == _planKey && (_plan != null || _planLoading)) {
+      _fitRoute(venue);
+      return;
+    }
+    final seq = ++_planSeq;
+    setState(() {
+      _planKey = key;
+      _plan = null;
+      _planError = null;
+      _planLoading = true;
+    });
+    try {
+      final res = await Repos.route.route(
+        fromLat: _app.userLatitude,
+        fromLng: _app.userLongitude,
+        venueId: venue['id'],
+        mode: _mode.apiName,
+      );
+      if (!mounted || seq != _planSeq) return;
+      final plan = RoutePlan.fromJson(res);
+      setState(() {
+        _plan = plan;
+        _planLoading = false;
+        _planError = plan == null ? 'Không đọc được dữ liệu tuyến đường.' : null;
+      });
+      _fitRoute(venue);
+    } catch (e) {
+      if (!mounted || seq != _planSeq) return;
+      setState(() {
+        _planLoading = false;
+        _planKey = null; // cho phép thử lại
+        _planError = _routeErrorText(e);
+      });
+    }
+  }
+
+  static String _routeErrorText(Object e) {
+    if (e is ApiException) {
+      if (e.statusCode == 503) return 'Máy chủ đang chuẩn bị bản đồ đường, tạm hiện hướng chim bay.';
+      if (e.statusCode == 422 || e.statusCode == 404) return e.message;
+      if (e.isConnectivity) return 'Không kết nối được máy chủ, tạm hiện hướng chim bay.';
+      return e.message;
+    }
+    return 'Không tải được tuyến đường, tạm hiện hướng chim bay.';
+  }
+
+  void _setMode(TravelMode mode) {
+    if (mode == _mode) return;
+    setState(() => _mode = mode);
+    final f = _focusedVenue;
+    if (_showRoute && f != null) _loadRoute(f);
+  }
+
+  /// Danh sách chỉ dẫn từng chỗ rẽ; chạm một bước để xem vị trí trên bản đồ.
+  void _showSteps(RoutePlan plan, Map<String, dynamic> venue) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final cs = theme.colorScheme;
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.92,
+          builder: (_, controller) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${plan.durationLabel} • ${plan.distanceLabel}',
+                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    Text('${_mode.label} tới ${venue['name']} • thời gian ước tính, chưa tính kẹt xe',
+                        style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: cs.outlineVariant),
+              Expanded(
+                child: ListView.separated(
+                  controller: controller,
+                  itemCount: plan.steps.length,
+                  separatorBuilder: (_, _) => Divider(height: 1, indent: 64, color: cs.outlineVariant),
+                  itemBuilder: (_, i) {
+                    final step = plan.steps[i];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: step.type == 'ARRIVE' ? cs.primary : cs.secondaryContainer,
+                        child: Icon(step.icon,
+                            color: step.type == 'ARRIVE' ? cs.onPrimary : cs.onSecondaryContainer),
+                      ),
+                      title: Text(step.instruction),
+                      subtitle: step.distanceMeters > 0 ? Text(RoutePlan.formatDistance(step.distanceMeters)) : null,
+                      onTap: step.point == null || !_mapReady
+                          ? null
+                          : () {
+                              Navigator.pop(sheetContext);
+                              _map.move(step.point!, 17);
+                            },
+                    );
+                  },
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      showDirectionsSheet(context, venue, distanceKm: _kmOf(venue));
+                    },
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
+                    icon: const Icon(Icons.navigation_outlined),
+                    label: const Text('Bắt đầu dẫn đường bằng Google Maps'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   List<Map<String, dynamic>> _visibleVenues() =>
@@ -136,13 +287,23 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
             if (_showRoute)
               PolylineLayer(
                 polylines: [
-                  // Nét đứt = hướng đường chim bay (không phải đường đi thực tế)
-                  Polyline(
-                    points: [_userGps, dest],
-                    strokeWidth: 4,
-                    color: cs.tertiary,
-                    pattern: const StrokePattern.dashed(segments: [12, 8]),
-                  ),
+                  if (_plan != null && _planKey == _keyFor(selected))
+                    // Tuyến theo đường phố (A* trên bản đồ OSM)
+                    Polyline(
+                      points: _plan!.points,
+                      strokeWidth: 5,
+                      color: cs.primary,
+                      borderStrokeWidth: 2,
+                      borderColor: cs.surface,
+                    )
+                  else
+                    // Nét đứt = hướng đường chim bay (chưa có / không lấy được tuyến)
+                    Polyline(
+                      points: [_userGps, dest],
+                      strokeWidth: 4,
+                      color: cs.tertiary,
+                      pattern: const StrokePattern.dashed(segments: [12, 8]),
+                    ),
                 ],
               ),
             MarkerLayer(
@@ -313,6 +474,10 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
                     'từ ${UiFmt.k(UiFmt.toNum(selected['basePricePerHour'], 0))}/giờ'),
               ],
             ),
+            if (_showRoute) ...[
+              const SizedBox(height: 10),
+              _routePanel(theme, selected),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -347,6 +512,79 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Chọn phương tiện + tóm tắt tuyến (quãng đường, thời gian, số chỗ rẽ).
+  Widget _routePanel(ThemeData theme, Map<String, dynamic> selected) {
+    final cs = theme.colorScheme;
+    final plan = _plan != null && _planKey == _keyFor(selected) ? _plan : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<TravelMode>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            for (final m in TravelMode.values)
+              ButtonSegment(value: m, icon: Icon(m.icon, size: 18), label: Text(m.label)),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (s) => _setMode(s.first),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: _planLoading
+              ? Row(
+                  children: [
+                    const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 10),
+                    Text('Đang tìm đường...', style: theme.textTheme.bodyMedium),
+                  ],
+                )
+              : plan != null
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${plan.durationLabel} • ${plan.distanceLabel}',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w800, color: cs.primary)),
+                              Text('Theo đường phố • ${plan.turnCount} chỗ rẽ • ước tính',
+                                  style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _showSteps(plan, selected),
+                          icon: const Icon(Icons.format_list_numbered, size: 18),
+                          label: const Text('Chỉ dẫn'),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _planError ?? 'Nét đứt là hướng đường chim bay.',
+                            style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                        if (_planError != null)
+                          TextButton(onPressed: () => _loadRoute(selected), child: const Text('Thử lại')),
+                      ],
+                    ),
+        ),
+      ],
     );
   }
 
@@ -495,7 +733,11 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
                   return Column(
                     children: [
                       Expanded(child: _buildMapWidget(selected)),
-                      _buildVenueInfoCard(selected),
+                      // Thẻ cao tối đa ~60% để bản đồ luôn còn chỗ; nội dung dài thì cuộn
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.6),
+                        child: _buildVenueInfoCard(selected),
+                      ),
                     ],
                   );
                 },

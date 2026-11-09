@@ -1,6 +1,7 @@
 import 'auth_repository.dart';
 import 'booking_repository.dart';
 import 'finance_repositories.dart';
+import 'route_repository.dart';
 import 'social_repositories.dart';
 import 'venue_repository.dart';
 
@@ -11,6 +12,7 @@ export '../api/json.dart';
 export 'auth_repository.dart';
 export 'booking_repository.dart';
 export 'finance_repositories.dart';
+export 'route_repository.dart';
 export 'social_repositories.dart';
 export 'venue_repository.dart';
 
@@ -29,4 +31,5 @@ class Repos {
   static final owner = OwnerRepository();
   static final admin = AdminRepository();
   static final ai = AiRepository();
+  static final route = RouteRepository();
 }

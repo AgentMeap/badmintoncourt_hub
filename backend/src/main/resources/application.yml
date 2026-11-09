@@ -56,3 +56,17 @@ app:
   gemini:
     api-key: ${GEMINI_API_KEY:}
     model: ${GEMINI_MODEL:gemini-2.5-flash}
+  # Tìm đường theo đường phố (A* trên bản đồ OpenStreetMap tự dựng ở backend).
+  # Lần đầu chạy: tự tải đường phố TP.HCM qua Overpass API (~15-30 phút, chạy nền),
+  # lưu ở data-dir/hcm-roads.graph; các lần sau chỉ đọc file (vài giây).
+  routing:
+    enabled: ${ROUTING_ENABLED:true}
+    data-dir: ${ROUTING_DATA_DIR:./data/routing}
+    # nam,tây,bắc,đông: TP.HCM (trừ Cần Giờ) + Dĩ An / Thuận An
+    bbox: ${ROUTING_BBOX:10.60,106.40,11.10,106.95}
+    tile-size-deg: 0.1
+    overpass-url: ${OVERPASS_URL:https://overpass-api.de/api/interpreter}
+    auto-import: ${ROUTING_AUTO_IMPORT:true}
+    # Nhân thời gian di chuyển cho xe (đèn đỏ, đông xe giờ cao điểm)
+    traffic-factor: 1.15
+    keep-tiles: false

@@ -136,3 +136,6 @@ mobile/android/app/google-services.json
 
 # Thư mục tạm khi chuyển file (không commit)
 _tmp_*/
+
+# Bản đồ đường OSM đã tải / dựng (lớn, mỗi máy tự tạo)
+**/data/routing/
