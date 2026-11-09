@@ -7,8 +7,9 @@ import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S09: Court Time-Slot Selection Grid Screen (Luồng 1)
-// - Lưới lấy từ dữ liệu thật: số sân = totalCourts, cột giờ = giờ mở cửa của cơ sở
-// - Ô đã đặt / bảo trì suy ra từ appState.bookings (chống đặt trùng)
+// - Danh sách sân (ID thật) và lịch đã đặt của ngày lấy từ GET /venues/{id}?playDate
+//   (mất kết nối thì suy ra từ totalCourts + appState.bookings, chỉ để xem)
+// - Cột giờ = giờ mở cửa của cơ sở; máy chủ kiểm tra trùng lịch lần cuối khi giữ chỗ
 // - Giá tính theo từng giờ (giờ thường / giờ vàng / cuối tuần) qua BookingRules
 // - Chọn ngày trong 7 ngày tới, khung giờ đã qua bị khóa
 // - Mỗi trạng thái có màu + icon, ô cao 48dp, tóm tắt & nút cố định ở đáy
@@ -32,6 +33,16 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
   bool _submitting = false;
   final ScrollController _hScroll = ScrollController();
 
+  /// Sân của cơ sở từ máy chủ (id, name...). null = chưa tải được.
+  List<Map<String, dynamic>>? _serverCourts;
+
+  /// Các khung đã đặt / giữ chỗ / bảo trì của [_loadedDate] từ máy chủ.
+  List<Map<String, dynamic>>? _dayBookings;
+  String? _loadedDate;
+  bool _loadingDay = true;
+  String? _loadError;
+  int _loadSeq = 0;
+
   AppState get _app => widget.appState;
   Map<String, dynamic> get _venue => _app.selectedVenue ?? _app.venues.first;
   List<String> get _hours => BookingRules.operatingHours(_venue);
@@ -41,8 +52,44 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
   void initState() {
     super.initState();
     _date = BookingRules.dateOnly(DateTime.now());
+    _fetchDay();
     // Cuộn lưới tới khung giờ còn đặt được đầu tiên
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFirstOpenHour());
+  }
+
+  /// Tải danh sách sân + lịch đã đặt của ngày đang chọn. Chỉ nhận kết quả của lần gọi mới nhất.
+  Future<void> _fetchDay() async {
+    final seq = ++_loadSeq;
+    final date = _playDate;
+    try {
+      final detail = await Repos.venue.detail(_venue['id'], playDate: date);
+      if (!mounted || seq != _loadSeq) return;
+      final courts = asJsonList(detail['courts']).where((c) => c['active'] != false).toList();
+      setState(() {
+        if (courts.isNotEmpty) {
+          _serverCourts = courts;
+          if (_selectedCourtIndex >= courts.length) _selectedCourtIndex = 0;
+        }
+        _dayBookings = asJsonList(detail['bookingsOnDate']);
+        _loadedDate = date;
+        _loadingDay = false;
+        _loadError = null;
+      });
+    } catch (e) {
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _loadingDay = false;
+        _loadError = ApiException.messageOf(e);
+      });
+    }
+  }
+
+  void _reloadDay() {
+    setState(() {
+      _loadingDay = true;
+      _loadError = null;
+    });
+    _fetchDay();
   }
 
   @override
@@ -60,10 +107,28 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
 
   // ---------------------------------------------------------------- Dữ liệu
 
+  /// Sân của cơ sở. Chưa tải được từ máy chủ thì suy ra từ totalCourts (ID tạm, không giữ chỗ được).
+  List<Map<String, dynamic>> get _courts =>
+      _serverCourts ??
+      [
+        for (var i = 1; i <= BookingRules.courtCount(_venue); i++) {'id': i, 'name': 'Sân $i'},
+      ];
+
+  bool get _hasServerData => _serverCourts != null && _loadedDate == _playDate;
+
+  String _courtName(int courtIdx) {
+    final courts = _courts;
+    if (courtIdx < 0 || courtIdx >= courts.length) return 'Sân ${courtIdx + 1}';
+    return courts[courtIdx]['name']?.toString() ?? 'Sân ${courtIdx + 1}';
+  }
+
+  Object _courtIdOf(int courtIdx) => _courts[courtIdx]['id'] ?? courtIdx + 1;
+
   Map<String, String> _occupancyOf(int courtIdx) => BookingRules.occupancy(
-        _app.bookings,
+        // Lịch của máy chủ gồm cả vé của người khác; khi offline chỉ có vé trên máy
+        _loadedDate == _playDate && _dayBookings != null ? _dayBookings! : _app.bookings,
         venueId: _venue['id'],
-        courtId: courtIdx + 1,
+        courtId: asNum(_courtIdOf(courtIdx))?.toInt() ?? courtIdx + 1,
         playDate: _playDate,
       );
 
@@ -101,7 +166,10 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
     setState(() {
       _date = d;
       _selectedSlots.clear();
+      _loadingDay = true;
+      _loadError = null;
     });
+    _fetchDay();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFirstOpenHour());
   }
 
@@ -149,6 +217,10 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
 
   Future<void> _holdAndProceed() async {
     if (_selectedSlots.isEmpty || _submitting) return;
+    if (!_hasServerData) {
+      _showMessage(_loadError ?? 'Đang tải lịch sân, vui lòng thử lại sau giây lát.');
+      return;
+    }
     final sorted = _sortedSelection;
 
     // Kiểm tra lại ngay trước khi giữ chỗ (có thể vừa có người đặt / giờ vừa trôi qua)
@@ -165,8 +237,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
     final end = _endOf(sorted);
     final total = BookingRules.priceOfRange(venue, _date, sorted).toDouble();
     assert(BookingRules.hoursOfRange(start, end).length == sorted.length);
-    // TODO(giai đoạn 2): lấy ID sân thật từ GET /venues/{id} thay vì suy ra từ thứ tự sân
-    final courtId = _selectedCourtIndex + 1;
+    final courtId = _courtIdOf(_selectedCourtIndex);
 
     final Map<String, dynamic> heldBooking;
     try {
@@ -183,9 +254,13 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        // 409: khung giờ vừa có người khác giữ chỗ / đặt
-        if (e is ApiException && e.kind == ApiErrorKind.conflict) _selectedSlots.clear();
+        // 409: khung giờ vừa có người khác giữ chỗ / đặt -> tải lại lịch
+        if (e is ApiException && e.kind == ApiErrorKind.conflict) {
+          _selectedSlots.clear();
+          _loadingDay = true;
+        }
       });
+      if (_loadingDay) _fetchDay();
       showApiError(context, e);
       return;
     }
@@ -255,7 +330,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
       child: Semantics(
         button: enabled,
         selected: s == _SlotState.selected,
-        label: 'Sân ${courtIdx + 1}, $h, $label',
+        label: '${_courtName(courtIdx)}, $h, $label',
         child: Material(
           color: bg,
           shape: RoundedRectangleBorder(
@@ -345,7 +420,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
     final tt = theme.textTheme;
     final venue = _venue;
     final hours = _hours;
-    final courts = BookingRules.courtCount(venue);
+    final courts = _courts.length;
     final occByCourt = [for (var c = 0; c < courts; c++) _occupancyOf(c)];
     final sorted = _sortedSelection;
     final total = BookingRules.priceOfRange(venue, _date, sorted);
@@ -410,6 +485,14 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
                     ),
                   ),
 
+                if (_loadingDay)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: LinearProgressIndicator(minHeight: 3),
+                  )
+                else if (_loadError != null)
+                  _loadErrorBanner(cs, tt),
+
                 // Lưới: cột tên sân cố định + các cột giờ cuộn ngang
                 Container(
                   padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
@@ -432,8 +515,9 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Text(
-                                    'Sân ${c + 1}',
+                                    _courtName(c),
                                     maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: tt.labelLarge?.copyWith(
                                       fontWeight: FontWeight.w700,
                                       color: (_selectedCourtIndex == c && sorted.isNotEmpty)
@@ -532,7 +616,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Sân ${_selectedCourtIndex + 1} • ${sorted.first} - ${_endOf(sorted)} (${sorted.length} giờ)',
+                      '${_courtName(_selectedCourtIndex)} • ${sorted.first} - ${_endOf(sorted)} (${sorted.length} giờ)',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
@@ -551,7 +635,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
                   ],
                 ),
           action: FilledButton(
-            onPressed: (sorted.isEmpty || _submitting) ? null : _holdAndProceed,
+            onPressed: (sorted.isEmpty || _submitting || !_hasServerData) ? null : _holdAndProceed,
             style: FilledButton.styleFrom(
               minimumSize: const Size(0, 52),
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -567,6 +651,30 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _loadErrorBanner(ColorScheme cs, TextTheme tt) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: cs.errorContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, color: cs.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Chưa tải được lịch sân. Lịch dưới đây có thể chưa đầy đủ.',
+              style: tt.bodySmall?.copyWith(color: cs.onErrorContainer),
+            ),
+          ),
+          TextButton(onPressed: _reloadDay, child: const Text('Thử lại')),
+        ],
+      ),
     );
   }
 

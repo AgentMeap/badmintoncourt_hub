@@ -148,6 +148,7 @@ class AppState extends ChangeNotifier {
   void goBack() {
     if (history.length > 1) {
       history.removeLast();
+      _releaseAbandonedHold(history.last);
       _setScreen(history.last);
     }
   }
@@ -157,6 +158,7 @@ class AppState extends ChangeNotifier {
   /// Xóa lịch sử và bắt đầu lại từ [screenCode] (sau đăng nhập, đăng xuất, đổi vai trò):
   /// nút Back không quay về màn đăng nhập nữa.
   void resetTo(String screenCode) {
+    _releaseAbandonedHold(screenCode);
     history
       ..clear()
       ..add(screenCode);
@@ -166,6 +168,7 @@ class AppState extends ChangeNotifier {
   /// Chuyển tab ở thanh điều hướng: lịch sử chỉ còn [home] (+ [tab] nếu khác home),
   /// nên bấm qua lại giữa các tab không làm lịch sử dài ra, Back từ tab bất kỳ về tab chính.
   void goToTab(String tab, String home) {
+    _releaseAbandonedHold(tab);
     history
       ..clear()
       ..add(home);
@@ -324,6 +327,7 @@ class AppState extends ChangeNotifier {
 
   /// Đăng xuất: xóa phiên + token, giữ lại cài đặt trên máy (sân yêu thích, lịch sử tìm kiếm).
   Future<void> logout() async {
+    _releaseAbandonedHold('S01');
     ApiClient.instance.token = null;
     try {
       final sp = await SharedPreferences.getInstance();
@@ -414,6 +418,57 @@ class AppState extends ChangeNotifier {
   void _applyAdminDashboard(Json d) {
     adminPendingVenues = asJsonList(d['venues']).where((v) => v['status'] == 'PENDING').toList();
     payoutRequests = asJsonList(d['payoutRequests']);
+  }
+
+  // ---------------------------------------------------------------- Vé đặt sân
+
+  static const _paymentScreens = {'S10', 'S11'};
+
+  /// Rời luồng thanh toán (Back về chọn giờ, đổi tab, đăng xuất) khi vé còn đang giữ chỗ:
+  /// báo máy chủ trả chỗ ngay cho người khác thay vì chờ hết 5 phút.
+  /// Mở tạm màn khác (Thông báo, Trợ lý AI) bằng goTo thì vẫn giữ chỗ.
+  void _releaseAbandonedHold(String target) {
+    if (!_paymentScreens.contains(currentScreen)) return;
+    if (_paymentScreens.contains(target) || target == 'S13') return;
+    final b = selectedBooking;
+    final id = b?['id'];
+    if (b == null || id == null || b['status'] != 'HELD') return;
+    b['status'] = 'CANCELLED';
+    activePayosPayment = null;
+    Repos.booking.release(id, customerId: userId).then((res) {
+      final server = asJson(res['booking']);
+      if (server.isNotEmpty) b.addAll(server);
+      notifyListeners();
+    }).catchError((Object e) {
+      debugPrint('[release] $e');
+      // Máy chủ từ chối (VD vé vừa được thanh toán): tải lại trạng thái thật
+      refreshBookings();
+    });
+  }
+
+  /// Tải lại danh sách vé của người dùng hiện tại.
+  Future<void> refreshBookings() async {
+    if (role != 'CUSTOMER') return syncFromBackend();
+    try {
+      bookings = await Repos.booking.customerBookings(userId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[bookings] $e');
+    }
+  }
+
+  /// Tải lại một vé (trạng thái, giờ, giá...) và cập nhật tại chỗ để màn đang mở thấy ngay.
+  Future<void> refreshBooking(Map<String, dynamic> booking) async {
+    final id = booking['id'];
+    if (id == null) return;
+    try {
+      final server = asJson((await Repos.booking.detail(id))['booking']);
+      if (server.isEmpty) return;
+      booking.addAll(server);
+      upsertBooking(booking);
+    } catch (e) {
+      debugPrint('[booking] $e');
+    }
   }
 
   /// Thay một vé trong danh sách bằng bản mới từ máy chủ (thêm lên đầu nếu chưa có).

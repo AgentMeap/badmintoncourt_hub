@@ -26,13 +26,20 @@ class BookingRepository {
         'totalPrice': totalPrice,
       }));
 
+  /// Trả lại chỗ đang giữ (HELD) khi khách bỏ dở thanh toán. Vé đã trả tiền -> 409.
+  Future<Json> release(Object bookingId, {int? customerId}) async =>
+      asJson(await _api.post('/bookings/$bookingId/release', {
+        if (customerId != null) 'customerId': customerId,
+      }));
+
   Future<List<Json>> customerBookings(int customerId) async =>
       asJsonList(await _api.get('/bookings/customer/$customerId'));
 
   /// `{booking, payment, refunds}`.
   Future<Json> detail(Object bookingId) async => asJson(await _api.get('/bookings/$bookingId'));
 
-  /// Đổi lịch. [totalPrice] = giá khung giờ mới để máy chủ bù/hoàn chênh lệch vào Ví.
+  /// Đổi lịch. Máy chủ tự tính giá khung giờ mới và bù/hoàn chênh lệch vào Ví
+  /// ([totalPrice] chỉ để tham khảo, máy chủ không dùng).
   /// Trả về `{booking, walletBalance, priceDifference}`.
   Future<Json> reschedule(
     Object bookingId, {
@@ -63,6 +70,10 @@ class BookingRepository {
   /// Giả lập PayOS gọi webhook báo đã thanh toán (dùng khi demo).
   Future<Json> simulatePayosWebhook(Object orderCode) async =>
       asJson(await _api.post('/payments/simulate-webhook/$orderCode'));
+
+  /// Trạng thái đơn PayOS: `{status, paid, holdActive, booking}`.
+  Future<Json> paymentStatus(Object orderCode) async =>
+      asJson(await _api.get('/payments/$orderCode/status'));
 
   /// Trả bằng Ví nội bộ. Trả về `{booking, walletBalance}`.
   Future<Json> payWithWallet({required Object bookingId, required int userId}) async =>

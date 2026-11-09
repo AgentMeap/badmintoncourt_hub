@@ -10,7 +10,8 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // - Hủy: hoàn 100% (>= 24h), 50% (6h - 24h), 0% (< 6h); vé chưa thanh toán không hoàn;
 //   vé đã hủy / đã dùng / đã tới giờ thì không hủy được (chống hoàn tiền 2 lần).
 // - Đổi lịch: tối đa 1 lần, trước giờ chơi >= 6h, giữ nguyên số giờ và sân,
-//   chỉ hiện khung còn trống, tính lại giá và bù / hoàn chênh lệch qua Ví.
+//   chỉ hiện khung còn trống (lịch ngày mới lấy từ GET /venues/{id}?playDate),
+//   tính lại giá và bù / hoàn chênh lệch qua Ví (máy chủ tính lại và kiểm tra lần cuối).
 // - Mọi thao tác tiền đều có hộp thoại xác nhận.
 class S14CancelRescheduleScreen extends StatefulWidget {
   final AppState appState;
@@ -25,6 +26,11 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
   late DateTime _newDate;
   String? _newStart;
   bool _busy = false;
+
+  /// Lịch đã đặt của ngày [_newDate] từ máy chủ. null = chưa tải được -> dùng vé trên máy.
+  List<Map<String, dynamic>>? _dayBookings;
+  String? _dayKey;
+  int _daySeq = 0;
 
   AppState get _app => widget.appState;
   Map<String, dynamic> get _b => _app.selectedBooking ?? _app.bookings.first;
@@ -41,6 +47,25 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
         BookingRules.dateOnly(DateTime.now());
     final today = BookingRules.dateOnly(DateTime.now());
     if (_newDate.isBefore(today)) _newDate = today;
+    _fetchDay();
+  }
+
+  /// Tải lịch đã đặt của sân trong ngày [_newDate] (gồm vé của người khác).
+  Future<void> _fetchDay() async {
+    final venueId = _b['venueId'];
+    if (venueId == null) return;
+    final seq = ++_daySeq;
+    final key = BookingRules.dateKey(_newDate);
+    try {
+      final detail = await Repos.venue.detail(venueId, playDate: key);
+      if (!mounted || seq != _daySeq) return;
+      setState(() {
+        _dayBookings = asJsonList(detail['bookingsOnDate']);
+        _dayKey = key;
+      });
+    } catch (e) {
+      debugPrint('[S14] $e');
+    }
   }
 
   @override
@@ -59,8 +84,13 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
     final venue = _venue;
     if (venue == null || _duration == 0) return const [];
     final hours = BookingRules.operatingHours(venue);
+    final dayKey = BookingRules.dateKey(_newDate);
+    final source = (_dayKey == dayKey && _dayBookings != null)
+        // Bỏ chính vé đang đổi (máy chủ không trả mã vé nên lọc theo id)
+        ? _dayBookings!.where((x) => '${x['id']}' != '${_b['id']}').toList()
+        : _app.bookings;
     final occ = BookingRules.occupancy(
-      _app.bookings,
+      source,
       venueId: _b['venueId'],
       courtId: UiFmt.toNum(_b['courtId'], 1).toInt(),
       playDate: BookingRules.dateKey(_newDate),
@@ -180,6 +210,7 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
+      if (e is ApiException && e.kind == ApiErrorKind.conflict) _fetchDay();
       showApiError(context, e);
       return;
     }
@@ -362,10 +393,13 @@ class _S14CancelRescheduleScreenState extends State<S14CancelRescheduleScreen> {
                   label: Text(label),
                   selected: d == _newDate,
                   showCheckmark: false,
-                  onSelected: (_) => setState(() {
-                    _newDate = d;
-                    _newStart = null;
-                  }),
+                  onSelected: (_) {
+                    setState(() {
+                      _newDate = d;
+                      _newStart = null;
+                    });
+                    _fetchDay();
+                  },
                 );
               }),
             ),

@@ -95,10 +95,26 @@ public class VenueController {
                 .filter(m -> "OPEN".equals(m.getStatus()))
                 .toList();
 
+        // Chỉ trả các trường cần để vẽ lịch trống; không lộ tên / SĐT khách cho người xem công khai
+        List<Map<String, Object>> occupiedSlots = new ArrayList<>();
+        for (Booking b : bookingsOnDate) {
+            Map<String, Object> slot = new LinkedHashMap<>();
+            slot.put("id", b.getId());
+            slot.put("venueId", b.getVenueId());
+            slot.put("courtId", b.getCourtId());
+            slot.put("playDate", b.getPlayDate());
+            slot.put("startTime", b.getStartTime());
+            slot.put("endTime", b.getEndTime());
+            slot.put("status", b.getStatus());
+            slot.put("bookingType", b.getBookingType());
+            slot.put("holdExpiresAt", b.getHoldExpiresAt());
+            occupiedSlots.add(slot);
+        }
+
         detail.put("courts", courts);
         detail.put("pricingRules", pricingRules);
         detail.put("playDate", dateStr);
-        detail.put("bookingsOnDate", bookingsOnDate);
+        detail.put("bookingsOnDate", occupiedSlots);
         detail.put("openMatches", openMatches);
         return ResponseEntity.ok(detail);
     }

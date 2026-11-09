@@ -6,6 +6,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // S12: My Bookings Screen
 // Thiết kế lại: lọc Sắp tới / Đã qua & hủy, thẻ vé có khối ngày bên trái,
 // nhãn trạng thái tiếng Việt kèm icon, trạng thái rỗng có lời gọi hành động.
+// Danh sách vé tải lại từ máy chủ khi mở màn và khi kéo xuống để làm mới.
 class S12MyBookingsScreen extends StatefulWidget {
   final AppState appState;
   const S12MyBookingsScreen({super.key, required this.appState});
@@ -19,9 +20,15 @@ class _S12MyBookingsScreenState extends State<S12MyBookingsScreen> {
 
   AppState get appState => widget.appState;
 
+  @override
+  void initState() {
+    super.initState();
+    appState.refreshBookings();
+  }
+
   static bool _isUpcoming(Map<String, dynamic> b) {
     final s = b['status']?.toString();
-    return s != 'CANCELLED' && s != 'REFUNDED' && s != 'COMPLETED';
+    return s != 'CANCELLED' && s != 'REFUNDED' && s != 'COMPLETED' && s != 'EXPIRED';
   }
 
   Widget _bookingCard(BuildContext context, Map<String, dynamic> b) {
@@ -185,43 +192,47 @@ class _S12MyBookingsScreenState extends State<S12MyBookingsScreen> {
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultContentMaxWidth,
-      child: ListView(
-        padding: Responsive.screenPadding(context),
-        children: [
-          Text(
-            'Lịch đặt của tôi',
-            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<bool>(
-              segments: [
-                ButtonSegment(
-                  value: true,
-                  label: Text('Sắp tới (${upcoming.length})'),
-                ),
-                ButtonSegment(
-                  value: false,
-                  label: Text('Lịch sử (${past.length})'),
-                ),
-              ],
-              selected: {_showUpcoming},
-              showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() => _showUpcoming = s.first),
+      child: RefreshIndicator(
+        onRefresh: appState.refreshBookings,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: Responsive.screenPadding(context),
+          children: [
+            Text(
+              'Lịch đặt của tôi',
+              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (shown.isEmpty)
-            _emptyState(context)
-          else
-            ...shown.map(
-              (b) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _bookingCard(context, b),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Sắp tới (${upcoming.length})'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Lịch sử (${past.length})'),
+                  ),
+                ],
+                selected: {_showUpcoming},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() => _showUpcoming = s.first),
               ),
             ),
-        ],
+            const SizedBox(height: 16),
+            if (shown.isEmpty)
+              _emptyState(context)
+            else
+              ...shown.map(
+                (b) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _bookingCard(context, b),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

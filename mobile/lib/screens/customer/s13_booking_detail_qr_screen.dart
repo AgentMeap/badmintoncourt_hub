@@ -10,9 +10,25 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // Thiết kế lại dạng "vé": đầu vé màu thương hiệu, thông tin chia ô,
 // đường xé răng cưa, mã QR check-in là trọng tâm. Khi vừa thanh toán xong
 // hiện thanh tiến trình bước 3 + lời chúc mừng. Vé đã hủy thì làm mờ QR.
-class S13BookingDetailQrScreen extends StatelessWidget {
+// Khi mở màn, tải lại vé từ máy chủ (GET /bookings/{id}) để thấy trạng thái mới nhất
+// (VD chủ sân vừa check-in, vé vừa được thanh toán / hủy).
+class S13BookingDetailQrScreen extends StatefulWidget {
   final AppState appState;
   const S13BookingDetailQrScreen({super.key, required this.appState});
+
+  @override
+  State<S13BookingDetailQrScreen> createState() => _S13BookingDetailQrScreenState();
+}
+
+class _S13BookingDetailQrScreenState extends State<S13BookingDetailQrScreen> {
+  AppState get appState => widget.appState;
+
+  @override
+  void initState() {
+    super.initState();
+    final b = appState.selectedBooking;
+    if (b != null) appState.refreshBooking(b);
+  }
 
   /// Vé này vừa được thanh toán xong (S10 / S11 đặt cờ trước khi mở S13).
   bool get _justPaid {

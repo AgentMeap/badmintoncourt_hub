@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -56,7 +57,7 @@ class BadmintonV2IntegrationTest {
                 "venueId", 1,
                 "courtId", 3,
                 "customerId", 1,
-                "playDate", "2026-11-15",
+                "playDate", LocalDate.now().plusDays(3).toString(),
                 "startTime", "20:00",
                 "endTime", "22:00",
                 "totalPrice", 240000

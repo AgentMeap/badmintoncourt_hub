@@ -34,8 +34,8 @@ class _S10CheckoutScreenState extends State<S10CheckoutScreen> {
     super.initState();
     // Đếm ngược theo mốc hết hạn lưu trong booking (tạo ở S09)
     final b = appState.selectedBooking ?? appState.bookings.first;
-    final expiresAt = b['holdExpiresAt'];
-    if (expiresAt is int) {
+    final expiresAt = BookingRules.holdExpiryMs(b['holdExpiresAt']);
+    if (expiresAt != null) {
       final left = (expiresAt - DateTime.now().millisecondsSinceEpoch) ~/ 1000;
       _remaining = left.clamp(0, _holdSeconds).toInt();
     }
@@ -148,7 +148,8 @@ class _S10CheckoutScreenState extends State<S10CheckoutScreen> {
           const SizedBox(width: 8),
           if (expired)
             TextButton(
-              onPressed: () => appState.goTo('S09'),
+              // Giữ chỗ đã hết hạn: về lưới giờ, bỏ màn thanh toán khỏi lịch sử
+              onPressed: () => appState.completeFlow('S09'),
               style: TextButton.styleFrom(foregroundColor: fg),
               child: const Text('Chọn lại'),
             )

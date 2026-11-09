@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/booking_rules.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -12,6 +13,8 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // Thiết kế lại: mã QR là trọng tâm, số tiền lớn, nội dung chuyển khoản có
 // nút sao chép, trạng thái "đang chờ" dùng vòng xoay thay cho emoji,
 // hướng dẫn 3 bước; nút giả lập webhook tách riêng, ghi rõ là demo.
+// Màn hình tự hỏi máy chủ mỗi 3 giây (GET /payments/{orderCode}/status) và tự mở vé
+// khi PayOS báo đã thanh toán. Đồng hồ đếm theo mốc hết hạn giữ chỗ của vé.
 class S11PayosQrScreen extends StatefulWidget {
   final AppState appState;
   const S11PayosQrScreen({super.key, required this.appState});
@@ -21,14 +24,71 @@ class S11PayosQrScreen extends StatefulWidget {
 }
 
 class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
+  static const _holdSeconds = BookingRules.holdMinutes * 60;
+  static const _pollInterval = Duration(seconds: 3);
+
   bool _simulating = false;
+  bool _completed = false;
+  bool _polling = false;
   Timer? _countdownTimer;
-  int _remainingSeconds = 300; // 5 phút
+  Timer? _pollTimer;
+  int _remainingSeconds = _holdSeconds;
 
   @override
   void initState() {
     super.initState();
+    // Đếm theo mốc hết hạn giữ chỗ (tạo ở S09), không reset về 5 phút khi mở lại màn
+    final expiresAt = BookingRules.holdExpiryMs(appState.selectedBooking?['holdExpiresAt']);
+    if (expiresAt != null) {
+      final left = (expiresAt - DateTime.now().millisecondsSinceEpoch) ~/ 1000;
+      _remainingSeconds = left.clamp(0, _holdSeconds).toInt();
+    }
     _startCountdown();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _checkPaymentStatus());
+  }
+
+  /// Hỏi máy chủ đơn đã được PayOS xác nhận chưa.
+  Future<void> _checkPaymentStatus() async {
+    final orderCode = appState.activePayosPayment?['payosOrderCode'];
+    if (orderCode == null || _polling || _completed || _simulating) return;
+    _polling = true;
+    try {
+      final res = await Repos.booking.paymentStatus(orderCode);
+      if (!mounted || _completed) return;
+      if (res['paid'] == true) {
+        _onPaid(asJson(res['booking']));
+      } else if (res['holdActive'] == false) {
+        // Giữ chỗ đã hết hạn / bị hủy trên máy chủ: dừng hỏi, hiện trạng thái hết giờ
+        _pollTimer?.cancel();
+        setState(() => _remainingSeconds = 0);
+      }
+    } catch (e) {
+      debugPrint('[S11] $e'); // lỗi mạng tạm thời: lần hỏi sau thử lại
+    } finally {
+      _polling = false;
+    }
+  }
+
+  /// Thanh toán thành công (do PayOS báo về hoặc nút giả lập): mở vé.
+  void _onPaid(Map<String, dynamic> serverBooking) {
+    if (_completed) return;
+    _completed = true;
+    _pollTimer?.cancel();
+    _countdownTimer?.cancel();
+    final booking = {...?appState.selectedBooking, ...serverBooking};
+    appState.upsertBooking(booking);
+    appState.selectedBooking = booking;
+    appState.activePayosPayment = null;
+    appState.pushNotification(
+      title: 'Thanh toán VietQR thành công',
+      body: 'Đơn #${booking['bookingCode']} (${booking['courtName']}, ${booking['startTime']}-${booking['endTime']}) đã được xác nhận.',
+      type: 'PAYMENT',
+      targetScreen: 'S13',
+      context: context,
+    );
+    // Kết thúc luồng đặt sân: Back từ vé không quay lại màn quét QR
+    appState.justPaidBookingCode = booking['bookingCode']?.toString();
+    appState.completeFlow('S13');
   }
 
   void _startCountdown() {
@@ -49,13 +109,14 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
   AppState get appState => widget.appState;
 
   Future<void> _simulatePayosWebhook(BuildContext context) async {
-    if (_simulating) return;
+    if (_simulating || _completed) return;
     final p = appState.activePayosPayment;
     final orderCode = p?['payosOrderCode'];
     if (orderCode == null) {
@@ -75,22 +136,8 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
       return;
     }
 
-    final b = appState.selectedBooking ?? <String, dynamic>{};
-    final booking = {...b, ...asJson(res['booking'])};
-    appState.upsertBooking(booking);
-    appState.selectedBooking = booking;
-
     if (!context.mounted) return;
-    appState.pushNotification(
-      title: 'Thanh toán VietQR thành công',
-      body: 'Đơn #${booking['bookingCode']} (${booking['courtName']}, ${booking['startTime']}-${booking['endTime']}) đã được xác nhận.',
-      type: 'PAYMENT',
-      targetScreen: 'S13',
-      context: context,
-    );
-    // Kết thúc luồng đặt sân: Back từ vé không quay lại màn quét QR
-    appState.justPaidBookingCode = booking['bookingCode']?.toString();
-    appState.completeFlow('S13');
+    _onPaid(asJson(res['booking']));
   }
 
   void _copy(BuildContext context, String label, String value) {
@@ -196,7 +243,7 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
                     alignment: Alignment.center,
                     children: [
                       CircularProgressIndicator(
-                        value: (_remainingSeconds / 300).clamp(0.0, 1.0),
+                        value: (_remainingSeconds / _holdSeconds).clamp(0.0, 1.0),
                         strokeWidth: 3.5,
                         backgroundColor: cs.surfaceContainerHighest,
                         color: timerColor,
@@ -228,7 +275,7 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
                 ),
                 if (_remainingSeconds <= 0)
                   TextButton(
-                    onPressed: () => appState.goTo('S09'),
+                    onPressed: () => appState.completeFlow('S09'),
                     child: const Text('Chọn lại'),
                   ),
               ],
@@ -348,7 +395,7 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
                 ),
                 const SizedBox(height: 8),
                 FilledButton.tonalIcon(
-                  onPressed: _simulating ? null : () => _simulatePayosWebhook(context),
+                  onPressed: (_simulating || _remainingSeconds <= 0) ? null : () => _simulatePayosWebhook(context),
                   style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
                   icon: _simulating
                       ? const SizedBox(

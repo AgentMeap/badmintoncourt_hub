@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -84,17 +85,28 @@ public class BookingPaymentController {
         String playDate = String.valueOf(body.getOrDefault("playDate", LocalDate.now().toString()));
         String startTime = String.valueOf(body.getOrDefault("startTime", "18:00"));
         String endTime = String.valueOf(body.getOrDefault("endTime", "20:00"));
-        double totalPrice = Double.parseDouble(String.valueOf(body.getOrDefault("totalPrice", 240000)));
 
+        Venue venue = venueRepository.findById(venueId).orElseThrow();
+        Court court = courtRepository.findById(courtId).orElseThrow();
+        User customer = userRepository.findById(customerId).orElseThrow();
+
+        if (!venueId.equals(court.getVenueId()) || !court.isActive()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Sân không thuộc cơ sở này hoặc đang tạm ngưng."));
+        }
+        if (!"APPROVED".equals(venue.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cơ sở chưa được phê duyệt để nhận đặt sân."));
+        }
+        String slotError = validateSlot(venue, playDate, startTime, endTime);
+        if (slotError != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", slotError));
+        }
         if (hasTimeConflict(courtId, playDate, startTime, endTime, null)) {
             return ResponseEntity.status(409).body(Map.of(
                     "error", "Khung giờ này vừa có người đặt hoặc đang được giữ chỗ! Vui lòng chọn sân/giờ khác."
             ));
         }
-
-        Venue venue = venueRepository.findById(venueId).orElseThrow();
-        Court court = courtRepository.findById(courtId).orElseThrow();
-        User customer = userRepository.findById(customerId).orElseThrow();
+        // Giá do máy chủ tính theo bảng giá cơ sở (không tin giá app gửi lên)
+        double totalPrice = priceFor(venue, playDate, startTime, endTime);
 
         String bookingCode = "BK-" + (System.currentTimeMillis() % 1000000);
         Booking b = new Booking();
@@ -128,6 +140,9 @@ public class BookingPaymentController {
     public ResponseEntity<?> createPayosPayment(@RequestBody Map<String, Object> body) {
         Long bookingId = Long.parseLong(String.valueOf(body.get("bookingId")));
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        if (!isHoldActive(booking)) {
+            return ResponseEntity.status(409).body(Map.of("error", HOLD_EXPIRED_MESSAGE));
+        }
 
         long orderCode = System.currentTimeMillis() / 1000;
         int amountInt = (int) Math.round(booking.getTotalPrice());
@@ -208,27 +223,62 @@ public class BookingPaymentController {
         if (orderCode == null) {
             return ResponseEntity.ok(Map.of("success", true));
         }
-        return confirmPayosOrder(orderCode);
+        return confirmPayosOrder(orderCode, true);
     }
 
     // Nút hỗ trợ Demo Webhook PayOS trên lớp học
     @PostMapping("/payments/simulate-webhook/{orderCode}")
     @Transactional
     public ResponseEntity<?> simulatePayosWebhook(@PathVariable Long orderCode) {
-        return confirmPayosOrder(orderCode);
+        return confirmPayosOrder(orderCode, false);
     }
 
-    private ResponseEntity<?> confirmPayosOrder(Long orderCode) {
+    // S11: App hỏi định kỳ trạng thái thanh toán (PENDING / PAID / CANCELLED)
+    @GetMapping("/payments/{orderCode}/status")
+    public ResponseEntity<?> getPaymentStatus(@PathVariable Long orderCode) {
+        Payment payment = paymentRepository.findByPayosOrderCode(orderCode).orElseThrow();
+        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("orderCode", orderCode);
+        res.put("status", payment.getStatus());
+        res.put("paid", "PAID".equals(payment.getStatus()) && "CONFIRMED".equals(booking.getStatus()));
+        res.put("holdActive", isHoldActive(booking));
+        res.put("booking", booking);
+        return ResponseEntity.ok(res);
+    }
+
+    /**
+     * Xác nhận đơn PayOS đã thanh toán.
+     * @param realPayment true = webhook thật từ PayOS (tiền đã chuyển), false = nút giả lập khi demo.
+     */
+    private ResponseEntity<?> confirmPayosOrder(Long orderCode, boolean realPayment) {
         Optional<Payment> opt = paymentRepository.findByPayosOrderCode(orderCode);
         if (opt.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy mã đơn PayOS: " + orderCode));
         }
         Payment payment = opt.get();
+        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+
+        // Webhook có thể gửi lại nhiều lần: đơn đã xác nhận thì trả kết quả cũ
+        if ("PAID".equals(payment.getStatus())) {
+            return ResponseEntity.ok(Map.of("success", true, "payment", payment, "booking", booking));
+        }
+        if (!isHoldActive(booking)) {
+            if (!realPayment) {
+                return ResponseEntity.status(409).body(Map.of("error", HOLD_EXPIRED_MESSAGE));
+            }
+            // Khách đã chuyển tiền nhưng giữ chỗ đã hết hạn: ghi nhận và hoàn toàn bộ vào Ví nội bộ
+            payment.setStatus("PAID");
+            payment.setPaidAt(LocalDateTime.now().format(FMT));
+            paymentRepository.save(payment);
+            refundLatePayment(booking, payment.getAmount());
+            return ResponseEntity.ok(Map.of("success", true, "refundedToWallet", true, "booking", booking));
+        }
+
         payment.setStatus("PAID");
         payment.setPaidAt(LocalDateTime.now().format(FMT));
         paymentRepository.save(payment);
 
-        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
         booking.setStatus("CONFIRMED");
         booking.setPaymentMethod("PAYOS_QR");
         bookingRepository.save(booking);
@@ -271,6 +321,13 @@ public class BookingPaymentController {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         User user = userRepository.findById(userId).orElseThrow();
 
+        if (!userId.equals(booking.getCustomerId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Vé này không thuộc tài khoản của bạn."));
+        }
+        // Chặn trả 2 lần cho cùng một vé và trả cho giữ chỗ đã hết hạn
+        if (!isHoldActive(booking)) {
+            return ResponseEntity.status(409).body(Map.of("error", HOLD_EXPIRED_MESSAGE));
+        }
         if (user.getWalletBalance() < booking.getTotalPrice()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Số dư Ví không đủ (" + (long) user.getWalletBalance() + "đ < " + (long) booking.getTotalPrice() + "đ). Vui lòng chọn Quét QR PayOS!"
@@ -319,6 +376,32 @@ public class BookingPaymentController {
         ));
     }
 
+    // Khách rời màn thanh toán: trả lại chỗ đang giữ ngay, không chờ hết 5 phút
+    @PostMapping("/bookings/{id}/release")
+    @Transactional
+    public ResponseEntity<?> releaseHeldBooking(@PathVariable Long id,
+                                                @RequestBody(required = false) Map<String, Object> body) {
+        Booking b = bookingRepository.findById(id).orElseThrow();
+        Object requester = body != null ? body.get("customerId") : null;
+        if (requester != null && !String.valueOf(requester).equals(String.valueOf(b.getCustomerId()))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Vé này không thuộc tài khoản của bạn."));
+        }
+        if (List.of("CONFIRMED", "CHECKED_IN", "COMPLETED").contains(b.getStatus())) {
+            return ResponseEntity.status(409).body(Map.of("error", "Vé đã thanh toán, hãy dùng chức năng Hủy vé để được hoàn tiền."));
+        }
+        if ("HELD".equals(b.getStatus())) {
+            b.setStatus("CANCELLED");
+            bookingRepository.save(b);
+            paymentRepository.findTopByBookingIdOrderByIdDesc(id).ifPresent(p -> {
+                if ("PENDING".equals(p.getStatus())) {
+                    p.setStatus("CANCELLED");
+                    paymentRepository.save(p);
+                }
+            });
+        }
+        return ResponseEntity.ok(Map.of("booking", b));
+    }
+
     @GetMapping("/bookings/customer/{customerId}")
     public List<Booking> getCustomerBookings(@PathVariable Long customerId) {
         return bookingRepository.findByCustomerIdOrderByIdDesc(customerId);
@@ -351,18 +434,28 @@ public class BookingPaymentController {
         String newEnd = String.valueOf(body.getOrDefault("endTime", "21:00"));
         Long newCourtId = body.get("courtId") != null ? Long.parseLong(String.valueOf(body.get("courtId"))) : b.getCourtId();
 
+        if (calculateHoursUntilPlay(b.getPlayDate(), b.getStartTime()) < RESCHEDULE_CUTOFF_HOURS
+                || calculateHoursUntilPlay(newDate, newStart) < RESCHEDULE_CUTOFF_HOURS) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Chỉ được đổi lịch khi cả giờ cũ và giờ mới còn cách ít nhất " + RESCHEDULE_CUTOFF_HOURS + " tiếng."
+            ));
+        }
+        Court targetCourt = courtRepository.findById(newCourtId).orElseThrow();
+        if (!b.getVenueId().equals(targetCourt.getVenueId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Chỉ được đổi sang sân trong cùng cơ sở."));
+        }
+        Venue venue = venueRepository.findById(b.getVenueId()).orElseThrow();
+        String slotError = validateSlot(venue, newDate, newStart, newEnd);
+        if (slotError != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", slotError));
+        }
         if (hasTimeConflict(newCourtId, newDate, newStart, newEnd, b.getId())) {
             return ResponseEntity.status(409).body(Map.of("error", "Khung giờ mới đã có người đặt, vui lòng chọn khung giờ khác!"));
         }
 
         // Chênh lệch giá giữa khung giờ mới và cũ: dương = khách bù thêm từ Ví, âm = hoàn vào Ví
         double oldPrice = b.getTotalPrice();
-        double newPrice = body.get("totalPrice") != null
-                ? Double.parseDouble(String.valueOf(body.get("totalPrice")))
-                : oldPrice;
-        if (newPrice < 0) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Giá vé mới không hợp lệ."));
-        }
+        double newPrice = priceFor(venue, newDate, newStart, newEnd);
         double diff = Math.round(newPrice - oldPrice);
         User customer = b.getCustomerId() != null ? userRepository.findById(b.getCustomerId()).orElse(null) : null;
         if (diff != 0 && customer == null) {
@@ -374,9 +467,8 @@ public class BookingPaymentController {
             ));
         }
 
-        Court newCourt = courtRepository.findById(newCourtId).orElseThrow();
         b.setCourtId(newCourtId);
-        b.setCourtName(newCourt.getName());
+        b.setCourtName(targetCourt.getName());
         b.setPlayDate(newDate);
         b.setStartTime(newStart);
         b.setEndTime(newEnd);
@@ -576,6 +668,7 @@ public class BookingPaymentController {
         for (Booking b : existing) {
             if (excludeBookingId != null && excludeBookingId.equals(b.getId())) continue;
             if (List.of("CANCELLED", "EXPIRED").contains(b.getStatus())) continue;
+            if ("HELD".equals(b.getStatus()) && !isHoldActive(b)) continue;
             int exStart = toMinutes(b.getStartTime());
             int exEnd = toMinutes(b.getEndTime());
             if (reqStart < exEnd && reqEnd > exStart) {
@@ -583,6 +676,88 @@ public class BookingPaymentController {
             }
         }
         return false;
+    }
+
+    private static final int PEAK_START_HOUR = 17;
+    private static final int RESCHEDULE_CUTOFF_HOURS = 6;
+    private static final String HOLD_EXPIRED_MESSAGE =
+            "Thời gian giữ chỗ đã hết hoặc vé không còn chờ thanh toán. Vui lòng chọn lại khung giờ.";
+
+    /** Vé đang giữ chỗ (HELD) và chưa quá hạn thanh toán. */
+    private boolean isHoldActive(Booking b) {
+        if (!"HELD".equals(b.getStatus())) return false;
+        if (b.getHoldExpiresAt() == null || b.getHoldExpiresAt().isBlank()) return true;
+        try {
+            return LocalDateTime.now().isBefore(LocalDateTime.parse(b.getHoldExpiresAt(), FMT));
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /**
+     * Kiểm tra khung giờ đặt: đúng định dạng, theo giờ tròn, trong giờ mở cửa và chưa trôi qua.
+     * Trả về câu báo lỗi, hoặc null nếu hợp lệ.
+     */
+    private String validateSlot(Venue venue, String playDate, String start, String end) {
+        LocalDate date;
+        int s;
+        int e;
+        try {
+            date = LocalDate.parse(playDate);
+            s = toMinutes(start);
+            e = toMinutes(end);
+        } catch (Exception ex) {
+            return "Ngày hoặc giờ đặt sân không hợp lệ.";
+        }
+        if (s % 60 != 0 || e % 60 != 0 || e <= s) {
+            return "Khung giờ phải theo giờ tròn và giờ kết thúc sau giờ bắt đầu.";
+        }
+        int open = toMinutes(venue.getOpenTime() != null ? venue.getOpenTime() : "05:00");
+        int close = toMinutes(venue.getCloseTime() != null ? venue.getCloseTime() : "23:00");
+        if (close <= open) close = 24 * 60;
+        if (s < open || e > close) {
+            return "Khung giờ nằm ngoài giờ mở cửa (" + venue.getOpenTime() + " - " + venue.getCloseTime() + ").";
+        }
+        if (!LocalDateTime.of(date, LocalTime.of(s / 60, 0)).isAfter(LocalDateTime.now())) {
+            return "Khung giờ đã trôi qua, vui lòng chọn giờ khác.";
+        }
+        return null;
+    }
+
+    /** Giá theo từng giờ: giờ vàng từ 17:00 ngày thường và cả ngày cuối tuần (giống BookingRules ở app). */
+    private double priceFor(Venue venue, String playDate, String start, String end) {
+        DayOfWeek day = LocalDate.parse(playDate).getDayOfWeek();
+        boolean weekend = day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
+        double total = 0;
+        for (int h = toMinutes(start) / 60; h < toMinutes(end) / 60; h++) {
+            total += (weekend || h >= PEAK_START_HOUR) ? venue.getPeakPricePerHour() : venue.getBasePricePerHour();
+        }
+        return total;
+    }
+
+    /** Tiền PayOS về sau khi giữ chỗ hết hạn: cộng lại vào Ví của khách. */
+    private void refundLatePayment(Booking booking, double amount) {
+        if (booking.getCustomerId() == null || amount <= 0) return;
+        userRepository.findById(booking.getCustomerId()).ifPresent(customer -> {
+            customer.setWalletBalance(customer.getWalletBalance() + amount);
+            userRepository.save(customer);
+            walletTransactionRepository.save(new WalletTransaction(
+                    customer.getId(),
+                    "Hoàn tiền PayOS vé " + booking.getBookingCode() + " (giữ chỗ đã hết hạn)",
+                    amount,
+                    "REFUND",
+                    customer.getWalletBalance(),
+                    LocalDateTime.now().format(FMT)
+            ));
+            notificationService.notifyUser(
+                    customer.getId(),
+                    "Đã hoàn " + (long) amount + "đ vào Ví Cầu Lông",
+                    "Thanh toán cho vé " + booking.getBookingCode() + " đến sau khi hết thời gian giữ chỗ nên đã được hoàn vào Ví.",
+                    "PAYMENT",
+                    "S18",
+                    booking.getId()
+            );
+        });
     }
 
     private int toMinutes(String hhmm) {
