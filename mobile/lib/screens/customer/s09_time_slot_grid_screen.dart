@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
@@ -106,6 +107,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
 
   /// Chọn khung giờ, luôn đảm bảo các giờ đã chọn LIỀN NHAU trên cùng một sân.
   void _toggle(int courtIdx, String h) {
+    HapticFeedback.selectionClick();
     final idx = _hours.indexOf(h);
     String? message;
     setState(() {
@@ -157,6 +159,7 @@ class _S09TimeSlotGridScreenState extends State<S09TimeSlotGridScreen> {
     }
 
     setState(() => _submitting = true);
+    HapticFeedback.mediumImpact();
     final venue = _venue;
     final start = sorted.first;
     final end = _endOf(sorted);

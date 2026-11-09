@@ -376,67 +376,87 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final items = _app.matches.where((m) {
-      if (_selectedSkill == 'ALL') return true;
       final p = m['post'] as Map<String, dynamic>;
+      if (_selectedSkill == 'ALL') return true;
+      if (_selectedSkill == 'MATCH_ME') {
+        final req = p['requiredSkill']?.toString();
+        return req == _app.skillLevel || req == 'ALL';
+      }
       return p['requiredSkill'] == _selectedSkill;
     }).toList();
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultContentMaxWidth,
-      child: ListView(
-        padding: Responsive.screenPadding(context),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('Tìm kèo giao lưu',
-                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-              ),
-              FilledButton.icon(
-                onPressed: () => _app.goTo('S16'),
-                style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Đăng kèo'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+      child: RefreshIndicator(
+        onRefresh: () async => await _app.syncFromBackend(),
+        child: ListView(
+          padding: Responsive.screenPadding(context),
+          children: [
+            Row(
               children: [
-                for (final s in ['ALL', ...SkillLevel.codes])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(s == 'ALL' ? 'Tất cả' : SkillLevel.label(s)),
-                      selected: _selectedSkill == s,
-                      showCheckmark: false,
-                      onSelected: (_) => setState(() => _selectedSkill = s),
-                    ),
-                  ),
+                Expanded(
+                  child: Text('Tìm kèo giao lưu',
+                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+                ),
+                FilledButton.icon(
+                  onPressed: () => _app.goTo('S16'),
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Đăng kèo'),
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: 12),
-          if (items.isEmpty)
-            EmptyState(
-              icon: Icons.groups_outlined,
-              title: 'Chưa có kèo phù hợp',
-              message: 'Thử trình độ khác hoặc tự mở một kèo mới.',
-              action: FilledButton.icon(
-                onPressed: () => _app.goTo('S16'),
-                icon: const Icon(Icons.add),
-                label: const Text('Đăng kèo'),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      avatar: Icon(Icons.stars_rounded,
+                          size: 16,
+                          color: _selectedSkill == 'MATCH_ME' ? cs.onPrimary : cs.primary),
+                      label: Text('Hợp với tôi (${SkillLevel.label(_app.skillLevel)})'),
+                      selected: _selectedSkill == 'MATCH_ME',
+                      showCheckmark: false,
+                      onSelected: (sel) => setState(() => _selectedSkill = sel ? 'MATCH_ME' : 'ALL'),
+                    ),
+                  ),
+                  for (final s in ['ALL', ...SkillLevel.codes])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(s == 'ALL' ? 'Tất cả' : SkillLevel.label(s)),
+                        selected: _selectedSkill == s,
+                        showCheckmark: false,
+                        onSelected: (_) => setState(() => _selectedSkill = s),
+                      ),
+                    ),
+                ],
               ),
-            )
-          else
-            ...items.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _matchCard(context, e),
-                )),
-        ],
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              EmptyState(
+                icon: Icons.groups_outlined,
+                title: 'Chưa có kèo phù hợp',
+                message: 'Thử trình độ khác hoặc tự mở một kèo mới.',
+                action: FilledButton.icon(
+                  onPressed: () => _app.goTo('S16'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Đăng kèo'),
+                ),
+              )
+            else
+              ...items.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _matchCard(context, e),
+                  )),
+          ],
+        ),
       ),
     );
   }

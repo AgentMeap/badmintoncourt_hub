@@ -93,6 +93,124 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     );
   }
 
+  Widget _buildSkillMeter(ThemeData theme, ColorScheme cs, String? requiredSkill) {
+    final mineIdx = SkillLevel.codes.indexOf(_app.skillLevel);
+    final reqIdx = SkillLevel.codes.indexOf(requiredSkill ?? '');
+    final (fitText, fitTone, fitIcon) = _skillFit(requiredSkill);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.speed_rounded, size: 20, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Thước đo độ phù hợp trình độ',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: List.generate(SkillLevel.codes.length, (idx) {
+              final code = SkillLevel.codes[idx];
+              final isMySkill = idx == mineIdx;
+              final isReqSkill = idx == reqIdx;
+              final isBoth = isMySkill && isReqSkill;
+
+              Color stepColor = cs.surfaceContainerHighest;
+              if (isBoth) {
+                stepColor = cs.primary;
+              } else if (isMySkill) {
+                stepColor = cs.secondary;
+              } else if (isReqSkill) {
+                stepColor = cs.tertiary;
+              }
+
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: idx < SkillLevel.codes.length - 1 ? 4 : 0),
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: stepColor,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        SkillLevel.label(code),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: (isMySkill || isReqSkill) ? FontWeight.bold : FontWeight.normal,
+                          color: (isMySkill || isReqSkill) ? cs.onSurface : cs.onSurfaceVariant,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      if (isBoth)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: cs.primary,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Khớp 100%',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cs.onPrimary,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      else if (isMySkill)
+                        Text(
+                          'Bạn',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.secondary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      else if (isReqSkill)
+                        Text(
+                          'Yêu cầu',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.tertiary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      else
+                        const SizedBox(height: 14),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          NoteBox(fitText, tone: fitTone, icon: fitIcon),
+        ],
+      ),
+    );
+  }
+
   Widget _line(ThemeData theme, IconData icon, String text) {
     final cs = theme.colorScheme;
     return Padding(
@@ -126,7 +244,6 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     final isHost = '${post['hostId']}' == '${_app.userId}';
     final full = current >= max;
     final myRequest = parts.where((p) => '${p['userId']}' == '${_app.userId}').firstOrNull;
-    final (fitText, fitTone, fitIcon) = _skillFit(post['requiredSkill']?.toString());
     final videoUrl = post['videoUrl']?.toString();
     final hasVideo = VideoLink.tryParse(videoUrl) != null;
     final hostVideoUrl = post['hostVideoUrl']?.toString();
@@ -214,7 +331,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                 ),
                 if (!isHost) ...[
                   const SizedBox(height: 12),
-                  NoteBox(fitText, tone: fitTone, icon: fitIcon),
+                  _buildSkillMeter(theme, cs, post['requiredSkill']?.toString()),
                 ],
                 const SizedBox(height: 16),
 

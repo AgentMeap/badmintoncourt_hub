@@ -30,6 +30,58 @@ class AppState extends ChangeNotifier {
   /// Yêu cầu rút tiền Ví đang chờ xác thực OTP (tạo ở S27, xử lý ở S03).
   Map<String, dynamic>? pendingWithdrawDraft;
 
+  /// Danh sách ID sân yêu thích (lưu trữ cục bộ SharedPreferences trên điện thoại).
+  Set<int> favoriteVenueIds = {1, 2};
+
+  /// Lịch sử các từ khóa tìm kiếm gần đây (lưu trữ cục bộ trên máy).
+  List<String> searchHistory = ['Linh Trung', 'KTX Khu B', 'TPT Sport'];
+
+  bool isFavorite(int venueId) => favoriteVenueIds.contains(venueId);
+
+  Future<void> toggleFavorite(int venueId) async {
+    if (favoriteVenueIds.contains(venueId)) {
+      favoriteVenueIds.remove(venueId);
+    } else {
+      favoriteVenueIds.add(venueId);
+    }
+    notifyListeners();
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setStringList('favorite_venues', favoriteVenueIds.map((e) => '$e').toList());
+    } catch (_) {}
+  }
+
+  Future<void> addSearchQuery(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    searchHistory.removeWhere((e) => e.toLowerCase() == trimmed.toLowerCase());
+    searchHistory.insert(0, trimmed);
+    if (searchHistory.length > 8) searchHistory = searchHistory.sublist(0, 8);
+    notifyListeners();
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setStringList('search_history', searchHistory);
+    } catch (_) {}
+  }
+
+  Future<void> removeSearchQuery(String query) async {
+    searchHistory.removeWhere((e) => e == query);
+    notifyListeners();
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setStringList('search_history', searchHistory);
+    } catch (_) {}
+  }
+
+  Future<void> clearSearchHistory() async {
+    searchHistory.clear();
+    notifyListeners();
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove('search_history');
+    } catch (_) {}
+  }
+
   // Data caches (synced from Spring Boot SQLite API, with rich initial fallback)
   List<Map<String, dynamic>> venues = [
     {
@@ -549,6 +601,14 @@ class AppState extends ChangeNotifier {
         skillLevel = sp.getString('auth_skill') ?? skillLevel;
         final targetHome = role == 'COURT_OWNER' ? 'S19' : (role == 'ADMIN' ? 'S24' : 'S06');
         resetTo(targetHome);
+      }
+      final favList = sp.getStringList('favorite_venues');
+      if (favList != null) {
+        favoriteVenueIds = favList.map((e) => int.tryParse(e)).whereType<int>().toSet();
+      }
+      final historyList = sp.getStringList('search_history');
+      if (historyList != null && historyList.isNotEmpty) {
+        searchHistory = List<String>.from(historyList);
       }
     } catch (_) {}
   }

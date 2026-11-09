@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
@@ -320,6 +321,30 @@ class S13BookingDetailQrScreen extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final shareText = '🏸 VÉ ĐẶT SÂN CẦU LÔNG\n'
+                    '• Sân: ${b['venueName'] ?? ''} - ${b['courtName'] ?? ''}\n'
+                    '• Thời gian: ${b['playDate'] ?? ''} (${b['timeRange'] ?? ''})\n'
+                    '• Mã đặt sân: ${b['bookingCode'] ?? ''}\n'
+                    '• Mã Check-in: $token\n'
+                    'Hẹn gặp mọi người tại sân nhé!';
+                await Clipboard.setData(ClipboardData(text: shareText));
+                HapticFeedback.lightImpact();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Đã sao chép thông tin vé để chia sẻ!'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
+              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+              icon: const Icon(Icons.share_outlined, size: 18),
+              label: const Text('Chia sẻ vé cho bạn đánh cùng', maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(height: 12),
             Row(

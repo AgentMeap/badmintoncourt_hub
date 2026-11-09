@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,35 @@ class S11PayosQrScreen extends StatefulWidget {
 
 class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
   bool _simulating = false;
+  Timer? _countdownTimer;
+  int _remainingSeconds = 300; // 5 phút
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_remainingSeconds > 0) {
+        setState(() => _remainingSeconds--);
+        if (_remainingSeconds == 60) {
+          HapticFeedback.mediumImpact();
+        }
+      } else {
+        timer.cancel();
+        HapticFeedback.heavyImpact();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
 
   AppState get appState => widget.appState;
 
@@ -127,6 +157,11 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
     final p = appState.activePayosPayment ??
         {'payosOrderCode': 902841, 'qrCodeData': 'VIETQR-PAYOS-${b['bookingCode']}'};
     final total = UiFmt.toNum(b['totalPrice'], 0);
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    final Color timerColor = _remainingSeconds > 120
+        ? cs.primary
+        : (_remainingSeconds > 60 ? Colors.orange.shade700 : cs.error);
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultFormMaxWidth,
@@ -134,6 +169,61 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
         padding: Responsive.screenPadding(context),
         children: [
           const BookingSteps(current: 1),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: timerColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: timerColor.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: (_remainingSeconds / 300).clamp(0.0, 1.0),
+                        strokeWidth: 3.5,
+                        backgroundColor: cs.surfaceContainerHighest,
+                        color: timerColor,
+                      ),
+                      Icon(Icons.timer_outlined, size: 18, color: timerColor),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Thời gian giữ chỗ còn lại',
+                        style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      Text(
+                        _remainingSeconds > 0
+                            ? '$minutes:${seconds.toString().padLeft(2, '0')}'
+                            : 'Đã hết thời gian giữ chỗ',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: timerColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_remainingSeconds <= 0)
+                  TextButton(
+                    onPressed: () => appState.goTo('S09'),
+                    child: const Text('Chọn lại'),
+                  ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(20),

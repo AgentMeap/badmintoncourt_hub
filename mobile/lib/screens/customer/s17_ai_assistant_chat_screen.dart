@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
@@ -23,6 +24,7 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
   final _scroll = ScrollController();
   late final List<Map<String, dynamic>> _messages;
   bool _sending = false;
+  Timer? _typewriterTimer;
 
   AppState get _app => widget.appState;
 
@@ -43,6 +45,7 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
 
   @override
   void dispose() {
+    _typewriterTimer?.cancel();
     _msgCtrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -109,11 +112,42 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
     } catch (_) {}
 
     if (!mounted) return;
+    final messageIndex = _messages.length;
     setState(() {
       _sending = false;
-      _messages.add({'sender': 'AI', 'text': reply, 'showActions': true});
+      _messages.add({
+        'sender': 'AI',
+        'text': '',
+        'fullText': reply,
+        'showActions': false,
+        'streaming': true,
+      });
     });
     _scrollToEnd();
+
+    _typewriterTimer?.cancel();
+    int charIndex = 0;
+    _typewriterTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      charIndex += 2;
+      if (charIndex >= reply.length) {
+        timer.cancel();
+        setState(() {
+          _messages[messageIndex]['text'] = reply;
+          _messages[messageIndex]['showActions'] = true;
+          _messages[messageIndex]['streaming'] = false;
+        });
+        _scrollToEnd();
+      } else {
+        setState(() {
+          _messages[messageIndex]['text'] = reply.substring(0, charIndex);
+        });
+        _scrollToEnd();
+      }
+    });
   }
 
   Widget _bubble(BuildContext context, Map<String, dynamic> m, double maxWidth) {
@@ -138,7 +172,7 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SelectableText(
-            m['text'].toString(),
+            m['streaming'] == true ? '${m['text']}▌' : m['text'].toString(),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: isUser ? cs.onPrimary : cs.onSurface,
               height: 1.45,

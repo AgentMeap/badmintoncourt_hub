@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
@@ -10,6 +11,17 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 class S08VenueDetailScreen extends StatelessWidget {
   final AppState appState;
   const S08VenueDetailScreen({super.key, required this.appState});
+
+  void _openGoogleMaps(dynamic lat, dynamic lng) async {
+    final dLat = UiFmt.toNum(lat, 10.8753);
+    final dLng = UiFmt.toNum(lng, 106.8000);
+    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dLat,$dLng');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
 
   Widget _statTile(BuildContext context, IconData icon, String value, String label) {
     final theme = Theme.of(context);
@@ -169,24 +181,47 @@ class S08VenueDetailScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  InfoPill(
-                                    icon: Icons.star_rounded,
-                                    label: '${v['rating'] ?? 4.9}',
-                                    iconColor: Colors.amber.shade700,
+                                  Expanded(
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        InfoPill(
+                                          icon: Icons.star_rounded,
+                                          label: '${v['rating'] ?? 4.9}',
+                                          iconColor: Colors.amber.shade700,
+                                        ),
+                                        if (distance != null)
+                                          InfoPill(icon: Icons.near_me, label: '$distance km'),
+                                        const InfoPill(
+                                          icon: Icons.verified_outlined,
+                                          label: 'Đã kiểm duyệt',
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  if (distance != null)
-                                    InfoPill(icon: Icons.near_me, label: '$distance km'),
-                                  const InfoPill(
-                                    icon: Icons.verified_outlined,
-                                    label: 'Đã kiểm duyệt',
+                                  Material(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    shape: const CircleBorder(),
+                                    child: InkWell(
+                                      customBorder: const CircleBorder(),
+                                      onTap: () => appState.toggleFavorite(v['id']),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Icon(
+                                          appState.isFavorite(v['id']) ? Icons.favorite : Icons.favorite_border,
+                                          size: 20,
+                                          color: appState.isFavorite(v['id']) ? Colors.redAccent : Colors.white,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 52),
+                              const SizedBox(height: 48),
                               Text(
                                 v['name'].toString(),
                                 style: theme.textTheme.headlineSmall?.copyWith(
@@ -218,12 +253,24 @@ class S08VenueDetailScreen extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
                     OutlinedButton.icon(
                       onPressed: () => appState.goTo('S07'),
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 42)),
+                      icon: const Icon(Icons.map_outlined, size: 18),
+                      label: const Text('Bản đồ Làng ĐH (S07)'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: () => _openGoogleMaps(v['latitude'], v['longitude']),
+                      style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
                       icon: const Icon(Icons.directions_outlined, size: 18),
-                      label: const Text('Bản đồ'),
+                      label: const Text('Chỉ đường Google Maps'),
                     ),
                   ],
                 ),

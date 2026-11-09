@@ -23,6 +23,7 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   _VenueSort _sort = _VenueSort.nearest;
+  bool _onlyFavorites = false;
 
   AppState get _app => widget.appState;
 
@@ -69,6 +70,7 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
   List<Map<String, dynamic>> _visibleVenues() {
     final q = _searchQuery.trim().toLowerCase();
     final list = _app.venues.where((v) {
+      if (_onlyFavorites && !_app.isFavorite(v['id'])) return false;
       if (q.isEmpty) return true;
       return v['name'].toString().toLowerCase().contains(q) ||
           v['address'].toString().toLowerCase().contains(q);
@@ -172,6 +174,9 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
           child: TextField(
             controller: _searchController,
             onChanged: (val) => setState(() => _searchQuery = val),
+            onSubmitted: (val) {
+              if (val.trim().isNotEmpty) _app.addSearchQuery(val);
+            },
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: 'Tên sân, quận/huyện...',
@@ -213,6 +218,46 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
     );
   }
 
+  Widget _buildSearchHistoryChips(BuildContext context) {
+    if (_searchQuery.isNotEmpty || _app.searchHistory.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(Icons.history, size: 16, color: cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final h in _app.searchHistory)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        avatar: const Icon(Icons.north_west, size: 12),
+                        label: Text(h, style: const TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          _searchController.text = h;
+                          setState(() => _searchQuery = h);
+                        },
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Xóa lịch sử tìm kiếm',
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                    onPressed: () => _app.clearSearchHistory(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSortChips() {
     const options = <_VenueSort, (String, IconData)>{
       _VenueSort.nearest: ('Gần nhất', Icons.near_me_outlined),
@@ -223,6 +268,27 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              avatar: Icon(
+                _onlyFavorites ? Icons.favorite : Icons.favorite_border,
+                size: 18,
+                color: _onlyFavorites ? Colors.red : null,
+              ),
+              label: Text(
+                'Yêu thích (${_app.favoriteVenueIds.length})',
+                style: TextStyle(
+                  fontWeight: _onlyFavorites ? FontWeight.w700 : null,
+                  color: _onlyFavorites ? Colors.red.shade900 : null,
+                ),
+              ),
+              selected: _onlyFavorites,
+              showCheckmark: false,
+              selectedColor: Colors.red.shade100,
+              onSelected: (val) => setState(() => _onlyFavorites = val),
+            ),
+          ),
           for (final e in options.entries)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -467,12 +533,34 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
                       iconColor: Colors.amber.shade700,
                     ),
                   ),
-                  if (distance != null)
-                    Positioned(
-                      right: 12,
-                      top: 10,
-                      child: InfoPill(icon: Icons.near_me, label: '$distance km'),
+                  Positioned(
+                    right: 12,
+                    top: 10,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (distance != null)
+                          InfoPill(icon: Icons.near_me, label: '$distance km'),
+                        const SizedBox(width: 6),
+                        Material(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _app.toggleFavorite(v['id']),
+                            child: Padding(
+                              padding: const EdgeInsets.all(5),
+                              child: Icon(
+                                _app.isFavorite(v['id']) ? Icons.favorite : Icons.favorite_border,
+                                size: 18,
+                                color: _app.isFavorite(v['id']) ? Colors.redAccent : Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                   Positioned(
                     left: 12,
                     bottom: 10,
@@ -636,14 +724,17 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultContentMaxWidth,
-      child: ListView(
-        padding: pad.copyWith(top: pad.top + 4, bottom: pad.bottom + 16),
-        children: [
-          _buildGreeting(context),
-          const SizedBox(height: 16),
-          _buildSearchRow(context),
-          const SizedBox(height: 12),
-          _buildSortChips(),
+      child: RefreshIndicator(
+        onRefresh: () async => widget.appState.syncFromBackend(),
+        child: ListView(
+          padding: pad.copyWith(top: pad.top + 4, bottom: pad.bottom + 16),
+          children: [
+            _buildGreeting(context),
+            const SizedBox(height: 16),
+            _buildSearchRow(context),
+            _buildSearchHistoryChips(context),
+            const SizedBox(height: 12),
+            _buildSortChips(),
           if (next != null && _searchQuery.isEmpty) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, 'Lịch sắp tới'),
@@ -672,6 +763,7 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
           if (venues.isEmpty) _buildEmptyState(context) else _buildVenueGrid(venues),
         ],
       ),
-    );
+    ),
+  );
   }
 }
