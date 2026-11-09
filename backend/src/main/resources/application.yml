@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: badminton-v2-backend
+  # Key bí mật đặt trong file này (đã nằm trong .gitignore), xem application-secret.example.properties
+  config:
+    import: optional:file:./application-secret.properties
+  # Upload video trình độ: mặc định Spring chỉ cho 1 MB/file -> nâng bằng giới hạn của app (100 MB)
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 105MB
   datasource:
     url: jdbc:sqlite:./badminton_v2.db?journal_mode=WAL&busy_timeout=10000&foreign_keys=ON
     driver-class-name: org.sqlite.JDBC
@@ -70,3 +78,11 @@ app:
     # Nhân thời gian di chuyển cho xe (đèn đỏ, đông xe giờ cao điểm)
     traffic-factor: 1.15
     keep-tiles: false
+
+# Ghi thêm log ra file UTF-8 (đọc bằng VS Code nếu cửa sổ PowerShell hiện lỗi font tiếng Việt)
+logging:
+  file:
+    name: ./logs/backend.log
+  charset:
+    console: UTF-8
+    file: UTF-8

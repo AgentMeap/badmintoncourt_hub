@@ -110,7 +110,9 @@ public final class OverpassImporter {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS && !tooHeavy; attempt++) {
             Path tmp = file.resolveSibling(file.getFileName() + ".part");
             try {
+                long started = System.currentTimeMillis();
                 int status = downloadTo(query(s, w, n, e), tmp);
+                boolean slowFailure = System.currentTimeMillis() - started > 90_000;
                 if (status == 200) {
                     String remark = remarkOf(tmp);
                     if (remark == null) {
@@ -120,9 +122,13 @@ public final class OverpassImporter {
                     }
                     log.warn("Overpass báo lỗi ô {}: {}", file.getFileName(), remark);
                     tooHeavy = true;
+                } else if ((status == 502 || status == 504) && (slowFailure || (status == 504 && attempt >= 2))) {
+                    // Máy chủ xử lý quá lâu rồi mới báo lỗi = ô quá nặng -> chia nhỏ ngay, không chờ tiếp
+                    log.warn("Ô {} quá nặng ({}), chia thành 4 ô nhỏ", file.getFileName(), status);
+                    tooHeavy = true;
                 } else if (status == 429 || status == 502 || status == 503 || status == 504) {
                     log.warn("Overpass bận ({}), thử lại ô {} lần {}", status, file.getFileName(), attempt);
-                    Thread.sleep(attempt * 20_000L);
+                    Thread.sleep(attempt * 15_000L);
                 } else {
                     throw new FatalOverpassException("Overpass trả mã " + status + " cho ô " + file.getFileName());
                 }

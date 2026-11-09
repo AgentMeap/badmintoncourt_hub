@@ -139,3 +139,6 @@ _tmp_*/
 
 # Bản đồ đường OSM đã tải / dựng (lớn, mỗi máy tự tạo)
 **/data/routing/
+
+# Video người dùng tải lên (lưu trên máy chạy backend, không đưa lên git)
+backend/uploads/

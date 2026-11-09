@@ -302,7 +302,7 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
                       points: [_userGps, dest],
                       strokeWidth: 4,
                       color: cs.tertiary,
-                      pattern: const StrokePattern.dashed(segments: [12, 8]),
+                      pattern: StrokePattern.dashed(segments: [12, 8]),
                     ),
                 ],
               ),

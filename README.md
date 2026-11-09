@@ -1,6 +1,5 @@
-# 🏸 Badminton Court Hub V2 — Nền Tảng Quản Lý, Đặt Sân & Tìm Kèo Cầu Lông
-
-> **Đồ án môn PRM393 — Ứng dụng Di động Đa Nền tảng**  
+# 🏸 Badminton Court Hub — Nền Tảng Quản Lý, Đặt Sân & Tìm Kèo Cầu Lông
+ 
 > Kiến trúc: **Flutter Mobile (Frontend)** + **Java Spring Boot 3 (REST API Backend)** + **SQLite Database (WAL Mode)**  
 > Quy mô: **3 Roles**, **5 Luồng nghiệp vụ**, **30 Màn hình (`S01` -> `S30`)**, **6 Module kỹ thuật bắt buộc** và **21 sân cầu lông thực tế quanh Làng Đại Học Quốc Gia TP.HCM**.
 
