@@ -64,11 +64,13 @@ class AppShell extends StatelessWidget {
                 ),
               ),
               actions: [
-                IconButton(
-                  tooltip: 'Trợ lý AI',
-                  onPressed: () => appState.goTo('S17'),
-                  icon: const Icon(Icons.smart_toy_outlined),
-                ),
+                // Trợ lý AI chỉ dành cho người chơi
+                if (appState.role == 'CUSTOMER')
+                  IconButton(
+                    tooltip: 'Trợ lý AI',
+                    onPressed: () => appState.goTo('S17'),
+                    icon: const Icon(Icons.smart_toy_outlined),
+                  ),
                 IconButton(
                   tooltip: 'Thông báo',
                   onPressed: () => appState.goTo('S05'),

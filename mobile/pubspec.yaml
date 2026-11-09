@@ -24,6 +24,8 @@ dependencies:
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0
   google_sign_in: ^7.2.0
+  # Nút micro ở Trợ lý AI (S17): nhận dạng giọng nói tiếng Việt có sẵn trên máy
+  speech_to_text: ^7.3.0
 
 dev_dependencies:
   flutter_test:

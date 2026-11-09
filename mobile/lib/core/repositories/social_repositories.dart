@@ -54,12 +54,22 @@ class ReviewRepository {
   Future<Json> create(Json review) async => asJson(await _api.post('/reviews', review));
 }
 
-/// Trợ lý AI (`/api/ai`).
+/// Trợ lý AI cho người chơi (`/api/ai`).
 class AiRepository {
   AiRepository([ApiClient? api]) : _api = api ?? ApiClient.instance;
   final ApiClient _api;
 
-  /// `{reply, suggestedVenues, suggestedMatches}`.
-  Future<Json> chat(String message) async =>
-      asJson(await _api.post('/ai/chat', {'message': message}));
+  /// Gửi câu hỏi. Trả về `{sessionId, reply, inScope, cards, quickChips, quota}`.
+  /// Quá 300 ký tự -> 400; vượt 5 tin/phút hoặc 30 tin/ngày -> 429.
+  Future<Json> chat(String message, {Object? sessionId}) async =>
+      asJson(await _api.post('/ai/chat', {
+        'message': message,
+        if (sessionId != null) 'sessionId': sessionId,
+      }));
+
+  /// Phiên đang mở: `{sessionId, messages: [{role, content, cards, quickChips}], quota}`.
+  Future<Json> currentSession() async => asJson(await _api.get('/ai/sessions/current'));
+
+  /// Bắt đầu cuộc trò chuyện mới (đóng phiên cũ).
+  Future<Json> newSession() async => asJson(await _api.post('/ai/sessions'));
 }

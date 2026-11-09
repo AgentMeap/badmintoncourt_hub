@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
+import com.badminton.v2.service.BookingRules;
 import com.badminton.v2.security.CurrentUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,6 @@ import org.springframework.web.client.RestClient;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -706,20 +706,13 @@ public class BookingPaymentController {
         CurrentUser.requireAnyOf("Bạn không có quyền xem vé này.", b.getCustomerId(), venueOwnerId);
     }
 
-    private static final int PEAK_START_HOUR = 17;
-    private static final int RESCHEDULE_CUTOFF_HOURS = 6;
+    private static final int RESCHEDULE_CUTOFF_HOURS = BookingRules.RESCHEDULE_CUTOFF_HOURS;
     private static final String HOLD_EXPIRED_MESSAGE =
             "Thời gian giữ chỗ đã hết hoặc vé không còn chờ thanh toán. Vui lòng chọn lại khung giờ.";
 
     /** Vé đang giữ chỗ (HELD) và chưa quá hạn thanh toán. */
     private boolean isHoldActive(Booking b) {
-        if (!"HELD".equals(b.getStatus())) return false;
-        if (b.getHoldExpiresAt() == null || b.getHoldExpiresAt().isBlank()) return true;
-        try {
-            return LocalDateTime.now().isBefore(LocalDateTime.parse(b.getHoldExpiresAt(), FMT));
-        } catch (Exception e) {
-            return true;
-        }
+        return BookingRules.isHoldActive(b);
     }
 
     /**
@@ -753,14 +746,9 @@ public class BookingPaymentController {
     }
 
     /** Giá theo từng giờ: giờ vàng từ 17:00 ngày thường và cả ngày cuối tuần (giống BookingRules ở app). */
+    /** Giá theo bảng giá cơ sở - dùng chung với Trợ lý AI (service/BookingRules). */
     private double priceFor(Venue venue, String playDate, String start, String end) {
-        DayOfWeek day = LocalDate.parse(playDate).getDayOfWeek();
-        boolean weekend = day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
-        double total = 0;
-        for (int h = toMinutes(start) / 60; h < toMinutes(end) / 60; h++) {
-            total += (weekend || h >= PEAK_START_HOUR) ? venue.getPeakPricePerHour() : venue.getBasePricePerHour();
-        }
-        return total;
+        return BookingRules.priceFor(venue, playDate, start, end);
     }
 
     /** Tiền PayOS về sau khi giữ chỗ hết hạn: cộng lại vào Ví của khách. */

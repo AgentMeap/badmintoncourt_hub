@@ -86,9 +86,10 @@ class _S11PayosQrScreenState extends State<S11PayosQrScreen> {
       targetScreen: 'S13',
       context: context,
     );
-    // Kết thúc luồng đặt sân: Back từ vé không quay lại màn quét QR
+    // Kết thúc luồng đặt sân: Back từ vé không quay lại màn quét QR.
+    // Đặt từ Trợ lý AI (S17 -> S11) thì không có S09 trong lịch sử, bỏ từ S11.
     appState.justPaidBookingCode = booking['bookingCode']?.toString();
-    appState.completeFlow('S13');
+    appState.completeFlow('S13', flowStart: appState.history.contains('S09') ? 'S09' : 'S11');
   }
 
   void _startCountdown() {
