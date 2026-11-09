@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -12,6 +13,8 @@ class AppState extends ChangeNotifier {
   String phone = '0909123456';
   String role = 'CUSTOMER'; // CUSTOMER | COURT_OWNER | ADMIN
   String skillLevel = 'TB_YEU';
+  // Link video giới thiệu trình độ (YouTube / .mp4), sửa ở S29; trống = chưa có
+  String introVideoUrl = '';
   double walletBalance = 350000;
   String lastOtpEmail = 'customer@badminton.vn';
   String lastOtpPurpose = 'REGISTER';
@@ -310,6 +313,7 @@ class AppState extends ChangeNotifier {
           'userName': 'Lê Minh Hoàng',
           'userSkill': 'TRUNG_BINH',
           'userPhone': '0903222333',
+          'userVideoUrl': 'https://www.youtube.com/watch?v=tAS7rOKtpgQ',
           'status': 'PENDING',
         }
       ],
@@ -333,6 +337,9 @@ class AppState extends ChangeNotifier {
         'currentPlayers': 5,
         'feePerPlayer': 75000.0,
         'status': 'OPEN',
+        // Link mẫu để demo, thay bằng video thật của nhóm
+        'videoUrl': 'https://www.youtube.com/watch?v=tAS7rOKtpgQ',
+        'hostVideoUrl': 'https://www.youtube.com/watch?v=tAS7rOKtpgQ',
       },
       'participants': [],
     },
@@ -512,7 +519,46 @@ class AppState extends ChangeNotifier {
       skillLevel = 'KHA';
       resetTo('S24');
     }
+    saveSession();
     syncFromBackend();
+  }
+
+  Future<void> saveSession({String? token}) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      if (token != null) await sp.setString('auth_token', token);
+      await sp.setInt('auth_user_id', userId);
+      await sp.setString('auth_full_name', fullName);
+      await sp.setString('auth_email', email);
+      await sp.setString('auth_phone', phone);
+      await sp.setString('auth_role', role);
+      await sp.setString('auth_skill', skillLevel);
+    } catch (_) {}
+  }
+
+  Future<void> loadSavedSession() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final savedId = sp.getInt('auth_user_id');
+      if (savedId != null) {
+        userId = savedId;
+        fullName = sp.getString('auth_full_name') ?? fullName;
+        email = sp.getString('auth_email') ?? email;
+        phone = sp.getString('auth_phone') ?? phone;
+        role = sp.getString('auth_role') ?? role;
+        skillLevel = sp.getString('auth_skill') ?? skillLevel;
+        final targetHome = role == 'COURT_OWNER' ? 'S19' : (role == 'ADMIN' ? 'S24' : 'S06');
+        resetTo(targetHome);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> logout() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.clear();
+    } catch (_) {}
+    resetTo('S01');
   }
 
   Future<void> syncFromBackend() async {
@@ -532,6 +578,10 @@ class AppState extends ChangeNotifier {
       final nRes = await ApiService.get('/notifications/user/$userId');
       if (nRes is Map && nRes['items'] is List) {
         notifications = List<Map<String, dynamic>>.from(nRes['items']);
+      }
+      final rList = await ApiService.get('/reviews');
+      if (rList is List && rList.isNotEmpty) {
+        reviews = List<Map<String, dynamic>>.from(rList);
       }
       notifyListeners();
     } catch (_) {

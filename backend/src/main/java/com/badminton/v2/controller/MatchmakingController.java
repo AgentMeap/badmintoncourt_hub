@@ -80,6 +80,9 @@ public class MatchmakingController {
         post.setMaxPlayers(Integer.parseInt(String.valueOf(body.getOrDefault("maxPlayers", 6))));
         post.setCurrentPlayers(Integer.parseInt(String.valueOf(body.getOrDefault("currentPlayers", 3))));
         post.setFeePerPlayer(Double.parseDouble(String.valueOf(body.getOrDefault("feePerPlayer", 65000))));
+        if (body.get("videoUrl") != null) {
+            post.setVideoUrl(String.valueOf(body.get("videoUrl")));
+        }
         post.setStatus("OPEN");
         post.setCreatedAt(LocalDateTime.now().format(FMT));
 

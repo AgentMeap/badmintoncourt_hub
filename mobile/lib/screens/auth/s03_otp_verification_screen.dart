@@ -114,6 +114,18 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
 
     if (widget.appState.lastOtpPurpose == 'PAYOUT' && widget.appState.pendingPayoutDraft != null) {
       final draft = widget.appState.pendingPayoutDraft!;
+      try {
+        await ApiService.post('/owner/payout-requests', {
+          'ownerId': draft['ownerId'] ?? widget.appState.userId,
+          'venueId': draft['venueId'] ?? 1,
+          'grossAmount': draft['grossAmount'],
+          'bankName': draft['bankName'],
+          'bankAccountNumber': draft['bankAccountNumber'],
+          'bankAccountHolder': draft['bankAccountHolder'],
+          'otpCode': _otpCtrl.text.trim(),
+        });
+      } catch (_) {}
+      if (!mounted) return;
       widget.appState.payoutRequests.insert(0, draft);
       widget.appState.pendingPayoutDraft = null;
       // Đánh dấu các vé đã đưa vào yêu cầu giải ngân để không bị tính 2 lần

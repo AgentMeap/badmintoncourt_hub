@@ -89,12 +89,28 @@ Xây dựng theo skill **ui-ux-pro-max** (nextlevelbuilder/ui-ux-pro-max-skill):
 - Cuộn sâu hơn ~1 màn hình sẽ hiện nút **"Lên đầu trang"** ở giữa phía trên (ẩn khi đang vuốt xuống);
   chạm lại tab đang mở cũng cuộn về đầu (`app/scroll_to_top.dart`). Không áp dụng cho Trợ lý AI.
 
-## Video kèo giao lưu (S16 → S15 → S30)
+## Video hồ sơ & kèo giao lưu: dán link HOẶC tải từ máy
 
-- Chủ kèo có thể đính kèm video nhóm đánh khi đăng kèo (S16): chọn từ thư viện hoặc quay mới (web chỉ chọn file),
-  tối đa **60 giây / 50 MB** (`MatchVideoRules` trong `lib/core/match_video.dart`), có xem trước, đổi, xóa.
-- Thẻ kèo ở S15 có nhãn "Có video"; bấm thẻ mở S30: xem video, so trình độ của bạn với yêu cầu, rồi xin tham gia.
-- Thư viện: `image_picker` (chọn/quay), `video_player` (phát). Sau khi thêm cần `flutter pub get` và build lại
-  từ đầu (đã thêm quyền INTERNET cho Android, quyền thư viện/camera/micro cho iOS).
-- Backend cần endpoint `POST /matches/{id}/video` (multipart, field `file`), trả về `{"videoUrl": "https://..."}`.
-  Khi chưa có backend, video vẫn xem được trên chính máy đã đăng (đường dẫn file cục bộ).
+Ô `VideoInput` (`lib/core/video_input.dart`) có 2 lựa chọn **[ Dán link | Tải từ máy ]**, dùng ở S29 (hồ sơ) và S16 (tạo kèo).
+Dù chọn cách nào, app và backend chỉ lưu **một chuỗi** (`introVideoUrl`, `videoUrl`), nên S15/S18/S30 dùng chung trình phát `VideoLinkPlayer`.
+
+| Giá trị lưu | Nguồn | Phát bằng |
+|---|---|---|
+| `https://www.youtube.com/watch?v=<id>` | Dán link YouTube (watch, youtu.be, shorts, embed, live) — tự chuẩn hóa | `youtube_player_iframe` |
+| `https://.../video.mp4` | Dán link file .mp4/.mov/.m4v/.webm | `video_player` |
+| `/uploads/videos/<file>` | Tải từ thư viện lên máy chủ (đường dẫn tương đối, app ghép với địa chỉ backend) | `video_player` |
+| `local:<đường dẫn>` | Demo khi chưa có backend: "Dùng tạm trên máy này" — chỉ xem được trên máy đó | `video_player` |
+
+**Tải từ máy** (`lib/core/video_upload.dart`): chọn từ thư viện (`image_picker`) → kiểm tra **tối đa 100 MB và 60 giây**
+→ upload ngay, có % tiến trình và nút Hủy → xem trước, Đổi / Xóa. Trên 50 MB có nhắc "có thể lâu nếu dùng 4G".
+Video dài quá 60 giây hoặc nặng quá 100 MB **không tự cắt** (cách A): app hướng dẫn cắt bằng app Ảnh (iPhone / Android) rồi chọn lại.
+Trong lúc kiểm tra / tải lên, nút Lưu hồ sơ / Đăng kèo bị khóa.
+
+Ban đầu trình phát chỉ hiện ảnh xem trước + nút phát, bấm mới tải video. Video YouTube riêng tư / tắt nhúng có nút "Mở trên YouTube".
+
+**Backend cần:**
+- `POST /api/media/videos` (multipart, field `file`): chỉ nhận .mp4/.mov/.m4v, tối đa 100 MB, đặt tên UUID,
+  lưu vào thư mục `uploads/videos/` và trả `{"url": "/uploads/videos/<tên file>"}`.
+- Phục vụ file tĩnh `/uploads/videos/**`; `spring.servlet.multipart.max-file-size=100MB`, `max-request-size=100MB`.
+- Cột chuỗi VARCHAR(500): `match_posts.video_url`, `users.intro_video_url`; trả `userVideoUrl` trong danh sách xin tham gia.
+- Android đang bật `usesCleartextTraffic` vì backend chạy http; khi deploy https thì bỏ.

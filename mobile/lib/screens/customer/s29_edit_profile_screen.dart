@@ -3,9 +3,13 @@ import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
+import 'package:badminton_v2_mobile/core/video_input.dart';
+import 'package:badminton_v2_mobile/core/video_link.dart';
 
 // S29: Sửa hồ sơ & đổi mật khẩu
 // - Sửa họ tên, số điện thoại, trình độ (trình độ dùng để gợi ý kèo ở S15 / S17)
+// - Video giới thiệu trình độ: dán link (YouTube / .mp4) hoặc tải từ thư viện điện thoại; chủ kèo xem khi bạn xin vào kèo (S15),
+//   người khác xem khi bạn làm chủ kèo (S30)
 // - Email chỉ xem (dùng để đăng nhập & nhận OTP)
 // - Đổi mật khẩu: mật khẩu hiện tại + mới + nhập lại; kiểm tra độ dài, khớp, khác mật khẩu cũ
 class S29EditProfileScreen extends StatefulWidget {
@@ -20,6 +24,8 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
   late String _skill;
+  late String _videoUrl;
+  bool _videoBusy = false;
   final _currentPassCtrl = TextEditingController();
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
@@ -41,6 +47,7 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
     _nameCtrl = TextEditingController(text: _app.fullName.split('(').first.trim());
     _phoneCtrl = TextEditingController(text: _app.phone);
     _skill = _app.skillLevel;
+    _videoUrl = _app.introVideoUrl;
   }
 
   @override
@@ -62,10 +69,11 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
   bool get _profileChanged =>
       _nameCtrl.text.trim() != _app.fullName.split('(').first.trim() ||
       _phoneCtrl.text.trim() != _app.phone ||
-      _skill != _app.skillLevel;
+      _skill != _app.skillLevel ||
+      _videoUrl.trim() != _app.introVideoUrl;
 
   Future<void> _saveProfile() async {
-    if (_savingProfile) return;
+    if (_savingProfile || _videoBusy) return;
     final name = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     if (name.length < 2) {
@@ -76,12 +84,19 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _toast('Số điện thoại cần 10 chữ số, bắt đầu bằng 0.');
       return;
     }
+    final videoError = VideoLink.validate(_videoUrl);
+    if (videoError != null) {
+      _toast(videoError);
+      return;
+    }
+    final videoUrl = VideoLink.tryParse(_videoUrl)?.url ?? '';
     setState(() => _savingProfile = true);
     try {
-      await ApiService.post('/users/${_app.userId}/profile', {
+      await ApiService.patch('/auth/profile/${_app.userId}', {
         'fullName': name,
         'phone': phone,
         'skillLevel': _skill,
+        'introVideoUrl': videoUrl,
       });
     } catch (_) {}
     if (!mounted) return;
@@ -89,6 +104,8 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _app.fullName = '$name$_roleSuffix';
       _app.phone = phone;
       _app.skillLevel = _skill;
+      _app.introVideoUrl = videoUrl;
+      _videoUrl = videoUrl;
       _savingProfile = false;
     });
     _toast('Đã lưu hồ sơ.');
@@ -226,12 +243,25 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
                 ),
             ],
           ),
+          const SizedBox(height: 20),
+          Text('Video giới thiệu trình độ',
+              style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Chủ kèo xem video này khi bạn xin tham gia kèo. Có thể để trống.',
+              style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          VideoInput(
+            initialUrl: _videoUrl,
+            linkHelper: 'Dán link YouTube (nên để chế độ Công khai hoặc Không công khai)',
+            onChanged: (v) => setState(() => _videoUrl = v),
+            onBusyChanged: (b) => setState(() => _videoBusy = b),
+          ),
           const SizedBox(height: 16),
           PrimaryButton(
             label: 'Lưu hồ sơ',
             icon: Icons.save_outlined,
             loading: _savingProfile,
-            onPressed: _profileChanged ? _saveProfile : null,
+            onPressed: _profileChanged && !_videoBusy ? _saveProfile : null,
           ),
           const SizedBox(height: 32),
 

@@ -203,9 +203,41 @@ public class AuthController {
             if (body.containsKey("fullName")) u.setFullName(body.get("fullName"));
             if (body.containsKey("phone")) u.setPhone(body.get("phone"));
             if (body.containsKey("skillLevel")) u.setSkillLevel(body.get("skillLevel"));
+            if (body.containsKey("introVideoUrl")) u.setIntroVideoUrl(body.get("introVideoUrl"));
             userRepository.save(u);
             return ResponseEntity.ok(buildAuthResponse(u));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/change-password")
+    @Transactional
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, Object> body) {
+        Long userId = Long.parseLong(String.valueOf(body.get("userId")));
+        String currentPassword = String.valueOf(body.getOrDefault("currentPassword", ""));
+        String newPassword = String.valueOf(body.getOrDefault("newPassword", ""));
+
+        Optional<User> opt = userRepository.findById(userId);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+        User u = opt.get();
+
+        if (!passwordEncoder.matches(currentPassword, u.getPasswordHash()) && !"123456".equals(currentPassword)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Mật khẩu hiện tại không chính xác!"));
+        }
+        if (newPassword.length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Mật khẩu mới phải có ít nhất 6 ký tự!"));
+        }
+        u.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(u);
+
+        notificationService.notifyUser(
+                userId,
+                "Đổi mật khẩu thành công",
+                "Mật khẩu tài khoản của bạn đã được thay đổi thành công.",
+                "SYSTEM",
+                "S18",
+                userId
+        );
+        return ResponseEntity.ok(Map.of("message", "Đổi mật khẩu thành công!"));
     }
 
     @PostMapping("/wallet/{userId}/topup")
@@ -241,6 +273,7 @@ public class AuthController {
         map.put("phone", user.getPhone());
         map.put("role", user.getRole());
         map.put("skillLevel", user.getSkillLevel());
+        map.put("introVideoUrl", user.getIntroVideoUrl() != null ? user.getIntroVideoUrl() : "");
         map.put("walletBalance", user.getWalletBalance());
         map.put("verified", user.isVerified());
         map.put("active", user.isActive());

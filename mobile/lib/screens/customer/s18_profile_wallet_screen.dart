@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
+import 'package:badminton_v2_mobile/core/video_link.dart';
 
 // S18: Customer Profile & In-App Wallet Screen
 // Giao diện theo design system: thẻ ví màu primary của Theme, số dư định dạng
@@ -66,7 +67,7 @@ class S18ProfileWalletScreen extends StatelessWidget {
       message: 'Bạn sẽ quay về màn hình đăng nhập. Có thể chọn vai trò khác để demo.',
       confirmLabel: 'Đăng xuất',
     );
-    if (ok) appState.resetTo('S01');
+    if (ok) appState.logout();
   }
 
   @override
@@ -180,6 +181,36 @@ class S18ProfileWalletScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+
+          // Video giới thiệu trình độ (link gắn ở S29)
+          SectionHeader(
+            'Video giới thiệu trình độ',
+            trailing: TextButton(
+              onPressed: () => appState.goTo('S29'),
+              child: Text(appState.introVideoUrl.isEmpty ? 'Thêm' : 'Sửa'),
+            ),
+          ),
+          if (VideoLink.tryParse(appState.introVideoUrl) != null)
+            VideoLinkPlayer(key: ValueKey(appState.introVideoUrl), url: appState.introVideoUrl)
+          else
+            SurfaceCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              onTap: () => appState.goTo('S29'),
+              child: Row(
+                children: [
+                  Icon(Icons.video_call_outlined, color: cs.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Gắn link video bạn đánh cầu để chủ kèo dễ duyệt khi bạn xin vào kèo.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+                ],
+              ),
+            ),
           const SizedBox(height: 24),
 
           SectionHeader('Lịch sử giao dịch', trailing: Text('${txs.length}',

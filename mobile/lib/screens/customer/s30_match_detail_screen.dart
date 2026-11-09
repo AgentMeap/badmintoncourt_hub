@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
-import 'package:badminton_v2_mobile/core/match_video.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
+import 'package:badminton_v2_mobile/core/video_link.dart';
 
 // S30: Chi tiết kèo giao lưu
-// - Video nhóm đánh (do chủ kèo đăng ở S16) để người xem tự đánh giá có hợp trình độ không
+// - Video nhóm đánh (link chủ kèo gắn ở S16) để người xem tự đánh giá có hợp trình độ không
+// - Video giới thiệu trình độ của chủ kèo (từ hồ sơ S29), nếu có
 // - So sánh trình độ yêu cầu với trình độ của bạn
 // - Thông tin kèo + nút xin tham gia (cùng quy tắc với S15: không xin kèo của mình,
 //   kèo đã đủ người, hoặc xin lại lần 2)
@@ -50,6 +51,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
         'userName': _app.fullName.split('(').first.trim(),
         'userSkill': _app.skillLevel,
         'userPhone': _app.phone,
+        if (_app.introVideoUrl.isNotEmpty) 'userVideoUrl': _app.introVideoUrl,
         'status': 'PENDING',
       });
     });
@@ -125,7 +127,10 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     final full = current >= max;
     final myRequest = parts.where((p) => '${p['userId']}' == '${_app.userId}').firstOrNull;
     final (fitText, fitTone, fitIcon) = _skillFit(post['requiredSkill']?.toString());
-    final hasVideo = MatchVideoRules.hasVideo(post);
+    final videoUrl = post['videoUrl']?.toString();
+    final hasVideo = VideoLink.tryParse(videoUrl) != null;
+    final hostVideoUrl = post['hostVideoUrl']?.toString();
+    final hasHostVideo = VideoLink.tryParse(hostVideoUrl) != null;
 
     return Column(
       children: [
@@ -137,7 +142,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
               children: [
                 // Video nhóm đánh
                 if (hasVideo) ...[
-                  MatchVideoPlayer(key: ValueKey('video-${post['id']}'), post: post),
+                  VideoLinkPlayer(key: ValueKey('video-${post['id']}'), url: videoUrl),
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -163,7 +168,11 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                 Text(post['title'].toString(),
                     style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  alignment: WrapAlignment.spaceBetween,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -179,14 +188,18 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    Icon(Icons.group_outlined, size: 18, color: full ? cs.error : cs.primary),
-                    const SizedBox(width: 4),
-                    Text('$current/$max người',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: full ? cs.error : cs.primary,
-                        )),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.group_outlined, size: 18, color: full ? cs.error : cs.primary),
+                        const SizedBox(width: 4),
+                        Text('$current/$max người',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: full ? cs.error : cs.primary,
+                            )),
+                      ],
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -220,6 +233,32 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                     ],
                   ),
                 ),
+                if (hasHostVideo) ...[
+                  const SizedBox(height: 20),
+                  SectionHeader('Video giới thiệu của ${post['hostName']}'),
+                  VideoLinkPlayer(key: ValueKey('host-${post['id']}'), url: hostVideoUrl),
+                ],
+                // Gợi ý thêm video hồ sơ để chủ kèo dễ duyệt
+                if (!isHost && myRequest == null && _app.introVideoUrl.isEmpty) ...[
+                  const SizedBox(height: 16),
+                  SurfaceCard(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                    onTap: () => _app.goTo('S29'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.video_call_outlined, color: cs.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Thêm link video của bạn vào hồ sơ để chủ kèo dễ duyệt hơn.',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                ],
                 if (isHost && parts.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   NoteBox('Có ${parts.length} yêu cầu tham gia. Duyệt thành viên ở bảng tin Tìm kèo.',

@@ -24,7 +24,7 @@ class _BadmintonV2AppState extends State<BadmintonV2App> {
   void initState() {
     super.initState();
     _appState = widget.appState ?? AppState();
-    _appState.syncFromBackend();
+    _appState.loadSavedSession().then((_) => _appState.syncFromBackend());
   }
 
   @override

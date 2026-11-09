@@ -68,6 +68,7 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
     } else {
       widget.appState.resetTo('S06');
     }
+    widget.appState.saveSession();
     widget.appState.syncFromBackend();
   }
 

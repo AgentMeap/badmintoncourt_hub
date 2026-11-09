@@ -1,10 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Tải ảnh sân, bản đồ, video kèo và gọi backend (bản release bắt buộc phải có) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic: backend đồ án chạy http (10.0.2.2 / IP LAN). Khi deploy https thì bỏ đi -->
     <application
         android:label="Badminton Hub"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -42,6 +44,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Mở video trên app YouTube / trình duyệt -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

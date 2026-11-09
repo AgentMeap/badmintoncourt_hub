@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:badminton_v2_mobile/main.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 
@@ -87,6 +88,7 @@ class _MockHttpOverrides extends HttpOverrides {
 
 void main() {
   setUpAll(() {
+    SharedPreferences.setMockInitialValues({});
     HttpOverrides.global = _MockHttpOverrides();
   });
 
@@ -108,7 +110,7 @@ void main() {
   ];
 
   for (final size in testSizes) {
-    testWidgets('Verify zero overflow at ${size.width.toInt()}x${size.height.toInt()} across all 29 screens',
+    testWidgets('Verify zero overflow at ${size.width.toInt()}x${size.height.toInt()} across all 30 screens',
         (WidgetTester tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;

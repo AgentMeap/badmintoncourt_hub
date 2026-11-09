@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/api_service.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
-import 'package:badminton_v2_mobile/core/match_video.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
+import 'package:badminton_v2_mobile/core/video_link.dart';
 
 // S15: Matchmaking Community Social Feed & Host Approval Screen (Luồng 5)
 // Giao diện theo design system + sửa logic:
@@ -11,6 +11,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // - Không xin vào kèo của chính mình, kèo đã đủ người, hoặc xin lại lần 2
 // - Xin tham gia sẽ thêm bạn vào danh sách chờ duyệt của kèo
 // - Bấm vào thẻ kèo để mở S30 (chi tiết + video nhóm đánh)
+// - Chủ kèo xem được video hồ sơ của người xin tham gia trước khi duyệt
 class S15MatchmakingFeedScreen extends StatefulWidget {
   final AppState appState;
   const S15MatchmakingFeedScreen({super.key, required this.appState});
@@ -52,6 +53,7 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
         'userName': _app.fullName.split('(').first.trim(),
         'userSkill': _app.skillLevel,
         'userPhone': _app.phone,
+        if (_app.introVideoUrl.isNotEmpty) 'userVideoUrl': _app.introVideoUrl,
         'status': 'PENDING',
       });
     });
@@ -109,6 +111,7 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
     final full = _isFull(post);
     final requested = _hasRequested(entry);
     final myRequest = participants.where((p) => '${p['userId']}' == '${_app.userId}').firstOrNull;
+    final video = VideoLink.tryParse(post['videoUrl']?.toString());
 
     return SurfaceCard(
       padding: const EdgeInsets.all(14),
@@ -119,6 +122,36 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Ảnh xem trước video YouTube (bấm để mở S30 xem video)
+          if (video?.thumbnailUrl != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ColoredBox(color: cs.surfaceContainerHighest),
+                    Image.network(
+                      video!.thumbnailUrl!,
+                      fit: BoxFit.cover,
+                      excludeFromSemantics: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                    Center(
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.play_arrow_rounded, size: 34, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Row(
             children: [
               Expanded(
@@ -147,7 +180,7 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
                         ],
                       ),
                     ),
-                    if (MatchVideoRules.hasVideo(post))
+                    if (video != null)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -259,6 +292,17 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
                         ],
                       ),
                     ),
+                    if (VideoLink.tryParse(p['userVideoUrl']?.toString()) != null)
+                      IconButton(
+                        tooltip: 'Xem video của ${p['userName']}',
+                        onPressed: () => showVideoSheet(
+                          context,
+                          title: 'Video của ${p['userName']}',
+                          subtitle: 'Trình độ tự đánh giá: ${SkillLevel.label(p['userSkill']?.toString())}',
+                          url: p['userVideoUrl'].toString(),
+                        ),
+                        icon: Icon(Icons.play_circle_outline, color: cs.primary),
+                      ),
                     if (p['status'] == 'PENDING')
                       FilledButton.tonal(
                         onPressed: full ? null : () => _approveParticipant(entry, p),

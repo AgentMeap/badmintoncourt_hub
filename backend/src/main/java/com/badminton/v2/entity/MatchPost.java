@@ -25,6 +25,7 @@ public class MatchPost {
     private int maxPlayers;
     private int currentPlayers;
     private double feePerPlayer;
+    private String videoUrl;
     private String status; // OPEN, FULL, COMPLETED, CANCELLED
     private String createdAt;
 
@@ -64,6 +65,8 @@ public class MatchPost {
     public void setCurrentPlayers(int currentPlayers) { this.currentPlayers = currentPlayers; }
     public double getFeePerPlayer() { return feePerPlayer; }
     public void setFeePerPlayer(double feePerPlayer) { this.feePerPlayer = feePerPlayer; }
+    public String getVideoUrl() { return videoUrl; }
+    public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getCreatedAt() { return createdAt; }

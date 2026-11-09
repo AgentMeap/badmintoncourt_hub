@@ -19,6 +19,7 @@ public class User {
     private String role; // CUSTOMER, COURT_OWNER, ADMIN
     private String skillLevel; // NEWBIE, TB_YEU, TRUNG_BINH, KHA
     private double walletBalance;
+    private String introVideoUrl;
     private boolean isVerified;
     private boolean isActive;
     private String createdAt;
@@ -54,6 +55,8 @@ public class User {
     public void setSkillLevel(String skillLevel) { this.skillLevel = skillLevel; }
     public double getWalletBalance() { return walletBalance; }
     public void setWalletBalance(double walletBalance) { this.walletBalance = walletBalance; }
+    public String getIntroVideoUrl() { return introVideoUrl; }
+    public void setIntroVideoUrl(String introVideoUrl) { this.introVideoUrl = introVideoUrl; }
     public boolean isVerified() { return isVerified; }
     public void setVerified(boolean verified) { isVerified = verified; }
     public boolean isActive() { return isActive; }
