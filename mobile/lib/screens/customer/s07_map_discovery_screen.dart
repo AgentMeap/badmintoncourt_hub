@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/directions.dart';
+import 'package:badminton_v2_mobile/core/location_service.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S07: OpenStreetMap Discovery Screen (Module 2)
-// Giao diện theo design system: ghim sân và vị trí dùng màu Theme + icon (không emoji),
-// khoảng cách tính THẬT từ vị trí người dùng tới tọa độ sân (latlong2),
-// thẻ thông tin sân dạng bottom sheet / panel bên, có ghi công OpenStreetMap
-// (bắt buộc theo chính sách sử dụng tile của OSM).
+// - Vị trí người dùng lấy từ GPS thật (geolocator); chưa có quyền / tắt GPS thì dùng
+//   Làng Đại học và báo rõ trên màn hình kèm nút "Bật vị trí".
+// - Khoảng cách và lọc bán kính tính từ vị trí đó (đường chim bay, latlong2).
+// - "Dẫn đường" mở Google Maps vào thẳng chế độ dẫn đường (xe máy / ô tô / đi bộ).
+//   Nét đứt trên bản đồ chỉ là hướng đường chim bay; tuyến theo đường phố sẽ làm ở bước sau.
+// - Có ghi công OpenStreetMap (bắt buộc theo chính sách sử dụng tile của OSM).
 class S07MapDiscoveryScreen extends StatefulWidget {
   final AppState appState;
   const S07MapDiscoveryScreen({super.key, required this.appState});
@@ -19,38 +22,81 @@ class S07MapDiscoveryScreen extends StatefulWidget {
 }
 
 class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
-  // Tọa độ GPS mặc định: Nhà Văn Hóa Sinh Viên ĐHQG TP.HCM (Làng Đại học)
-  final LatLng _userGps = const LatLng(10.8753, 106.8000);
   static final _distance = Distance();
+  final _map = MapController();
+  bool _mapReady = false;
   Map<String, dynamic>? _focusedVenue;
   bool _showRoute = false;
-  double _maxRadiusKm = 10.0;
+  bool _locating = false;
+
+  /// Bán kính lọc (km); vô cực = tất cả.
+  double _maxRadiusKm = double.infinity;
+
+  AppState get _app => widget.appState;
+  LatLng get _userGps => LatLng(_app.userLatitude, _app.userLongitude);
+  bool get _filtered => _maxRadiusKm.isFinite;
 
   @override
   void initState() {
     super.initState();
-    if (widget.appState.venues.isNotEmpty) {
-      _focusedVenue = widget.appState.venues.first;
+    _focusedVenue = _nearestVenue();
+    // Sau khung hình đầu tiên (không gọi setState trong initState)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _locate();
+    });
+  }
+
+  Map<String, dynamic>? _nearestVenue() {
+    final venues = _app.venues;
+    if (venues.isEmpty) return null;
+    return venues.reduce((a, b) => _kmOf(a) <= _kmOf(b) ? a : b);
+  }
+
+  /// Lấy GPS rồi đưa bản đồ về vị trí người dùng.
+  Future<void> _locate({bool force = false}) async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    final status = _app.locationStatus;
+    if (force && (status == LocationStatus.serviceDisabled || status == LocationStatus.deniedForever)) {
+      await LocationService.openSettings(status);
+    }
+    await _app.refreshLocation(force: force);
+    if (!mounted) return;
+    setState(() {
+      _locating = false;
+      // Danh sách sân đã được tải lại theo vị trí mới: giữ sân đang chọn nếu còn
+      final id = '${_focusedVenue?['id']}';
+      _focusedVenue = _app.venues.where((v) => '${v['id']}' == id).firstOrNull ?? _nearestVenue();
+    });
+    if (_mapReady) {
+      final f = _focusedVenue;
+      if (_showRoute && f != null) {
+        _fitRoute(f);
+      } else {
+        _map.move(_userGps, 14);
+      }
     }
   }
 
-  void _openGoogleMaps(dynamic lat, dynamic lng) async {
-    final dLat = UiFmt.toNum(lat, 10.8753);
-    final dLng = UiFmt.toNum(lng, 106.8000);
-    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dLat,$dLng');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
+  void _fitRoute(Map<String, dynamic> venue) {
+    if (!_mapReady) return;
+    _map.fitCamera(CameraFit.coordinates(
+      coordinates: [_userGps, _posOf(venue)],
+      padding: const EdgeInsets.fromLTRB(48, 72, 48, 48),
+      maxZoom: 16,
+    ));
   }
 
-  List<Map<String, dynamic>> _visibleVenues() {
-    return widget.appState.venues.where((v) {
-      final km = _distance.as(LengthUnit.Meter, _userGps, _posOf(v)) / 1000;
-      return km <= _maxRadiusKm;
-    }).toList();
+  void _focus(Map<String, dynamic> v, {bool showRoute = true}) {
+    setState(() {
+      _focusedVenue = v;
+      _showRoute = showRoute;
+    });
+    if (showRoute) _fitRoute(v);
   }
+
+  List<Map<String, dynamic>> _visibleVenues() =>
+      _app.venues.where((v) => !_filtered || _kmOf(v) <= _maxRadiusKm).toList();
 
   LatLng _posOf(Map<String, dynamic> v) => LatLng(
         UiFmt.toNum(v['latitude'], 0).toDouble(),
@@ -58,9 +104,11 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
       );
 
   /// Khoảng cách đường chim bay (km) từ vị trí người dùng.
-  String _kmTo(Map<String, dynamic> v) {
-    final km = _distance.as(LengthUnit.Meter, _userGps, _posOf(v)) / 1000;
-    return '${km.toStringAsFixed(1)} km';
+  double _kmOf(Map<String, dynamic> v) => _distance.as(LengthUnit.Meter, _userGps, _posOf(v)) / 1000;
+
+  String _kmLabel(Map<String, dynamic> v) {
+    final km = _kmOf(v);
+    return km < 10 ? '${km.toStringAsFixed(1)} km' : '${km.round()} km';
   }
 
   Widget _buildMapWidget(Map<String, dynamic> selected) {
@@ -68,106 +116,138 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
     final cs = theme.colorScheme;
     final dest = _posOf(selected);
 
-    return FlutterMap(
-      options: MapOptions(initialCenter: _userGps, initialZoom: 13.8),
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.badminton.badminton_v2_mobile',
-        ),
-        if (_showRoute)
-          PolylineLayer(
-            polylines: [
-              Polyline(points: [_userGps, dest], strokeWidth: 4.5, color: cs.tertiary),
-            ],
+        FlutterMap(
+          mapController: _map,
+          options: MapOptions(
+            initialCenter: _userGps,
+            initialZoom: 13.8,
+            onMapReady: () {
+              _mapReady = true;
+              if (_showRoute) _fitRoute(selected);
+            },
           ),
-        MarkerLayer(
-          markers: [
-            // Vị trí người dùng
-            Marker(
-              point: _userGps,
-              width: 36,
-              height: 36,
-              child: Semantics(
-                label: 'Vị trí của bạn',
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: cs.tertiary.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.badminton.badminton_v2_mobile',
+            ),
+            if (_showRoute)
+              PolylineLayer(
+                polylines: [
+                  // Nét đứt = hướng đường chim bay (không phải đường đi thực tế)
+                  Polyline(
+                    points: [_userGps, dest],
+                    strokeWidth: 4,
+                    color: cs.tertiary,
+                    pattern: const StrokePattern.dashed(segments: [12, 8]),
                   ),
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: cs.tertiary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: cs.surface, width: 3),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                // Vị trí người dùng (xám khi đang dùng vị trí mặc định)
+                Marker(
+                  point: _userGps,
+                  width: 36,
+                  height: 36,
+                  child: Semantics(
+                    label: _app.hasRealLocation ? 'Vị trí của bạn' : 'Vị trí mặc định Làng Đại học',
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: (_app.hasRealLocation ? cs.tertiary : cs.outline).withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: _app.hasRealLocation ? cs.tertiary : cs.outline,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: cs.surface, width: 3),
+                        ),
+                      ),
                     ),
                   ),
+                ),
+                // Ghim các sân (theo bán kính đã lọc)
+                ..._visibleVenues().map((v) {
+                  final isFocused = '${selected['id']}' == '${v['id']}';
+                  return Marker(
+                    point: _posOf(v),
+                    width: 96,
+                    height: 64,
+                    alignment: Alignment.topCenter,
+                    child: Semantics(
+                      button: true,
+                      label: '${v['name']}, ${_kmLabel(v)}',
+                      child: GestureDetector(
+                        onTap: () => _focus(v),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isFocused ? cs.primary : cs.surface,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: cs.primary, width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(color: cs.shadow.withValues(alpha: 0.15), blurRadius: 4),
+                                ],
+                              ),
+                              child: Text(
+                                '${UiFmt.k(UiFmt.toNum(v['basePricePerHour'], 0))}/giờ',
+                                maxLines: 1,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: isFocused ? cs.onPrimary : cs.primary,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.location_on, size: 30, color: isFocused ? cs.primary : cs.secondary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Container(
+                margin: const EdgeInsets.all(6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: cs.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: cs.outlineVariant, width: 0.5),
+                ),
+                child: Text(
+                  '© OpenStreetMap',
+                  style: theme.textTheme.labelSmall?.copyWith(fontSize: 10, color: cs.onSurfaceVariant),
                 ),
               ),
             ),
-            // Ghim các sân (theo bán kính đã lọc)
-            ..._visibleVenues().map((v) {
-              final isFocused = '${selected['id']}' == '${v['id']}';
-              return Marker(
-                point: _posOf(v),
-                width: 96,
-                height: 64,
-                alignment: Alignment.topCenter,
-                child: Semantics(
-                  button: true,
-                  label: '${v['name']}, ${_kmTo(v)}',
-                  child: GestureDetector(
-                    onTap: () => setState(() {
-                      _focusedVenue = v;
-                      _showRoute = true;
-                    }),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isFocused ? cs.primary : cs.surface,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: cs.primary, width: 1.5),
-                            boxShadow: [
-                              BoxShadow(color: cs.shadow.withValues(alpha: 0.15), blurRadius: 4),
-                            ],
-                          ),
-                          child: Text(
-                            '${UiFmt.k(UiFmt.toNum(v['basePricePerHour'], 0))}/giờ',
-                            maxLines: 1,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: isFocused ? cs.onPrimary : cs.primary,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.location_on, size: 30, color: isFocused ? cs.primary : cs.secondary),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
           ],
         ),
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Container(
-            margin: const EdgeInsets.all(6),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: cs.surface.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: cs.outlineVariant, width: 0.5),
-            ),
-            child: Text(
-              '© OpenStreetMap',
-              style: theme.textTheme.labelSmall?.copyWith(fontSize: 10, color: cs.onSurfaceVariant),
+        // Nút "Vị trí của tôi"
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Material(
+            color: cs.surface,
+            elevation: 2,
+            shape: const CircleBorder(),
+            child: IconButton(
+              tooltip: 'Về vị trí của tôi',
+              onPressed: _locating ? null : () => _locate(force: true),
+              icon: _locating
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Icon(_app.hasRealLocation ? Icons.my_location : Icons.location_searching, color: cs.primary),
             ),
           ),
         ),
@@ -180,8 +260,8 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
     final cs = theme.colorScheme;
 
     void openVenue() {
-      widget.appState.selectedVenue = selected;
-      widget.appState.goTo('S08');
+      _app.selectedVenue = selected;
+      _app.goTo('S08');
     }
 
     return Container(
@@ -224,7 +304,10 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
               spacing: 8,
               runSpacing: 6,
               children: [
-                _chip(theme, Icons.near_me_outlined, _kmTo(selected)),
+                Tooltip(
+                  message: 'Khoảng cách đường chim bay',
+                  child: _chip(theme, Icons.near_me_outlined, _kmLabel(selected)),
+                ),
                 _chip(theme, Icons.star_rounded, '${selected['rating'] ?? '-'}', iconColor: Colors.amber.shade700),
                 _chip(theme, Icons.payments_outlined,
                     'từ ${UiFmt.k(UiFmt.toNum(selected['basePricePerHour'], 0))}/giờ'),
@@ -234,20 +317,21 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => setState(() => _showRoute = !_showRoute),
-                    style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-                    icon: Icon(_showRoute ? Icons.route : Icons.alt_route_outlined, size: 18),
-                    label: Text(_showRoute ? 'Ẩn tuyến' : 'Tuyến đường',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => showDirectionsSheet(context, selected, distanceKm: _kmOf(selected)),
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                    icon: const Icon(Icons.navigation_outlined, size: 18),
+                    label: const Text('Dẫn đường', maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'Mở Google Maps chỉ đường',
-                  onPressed: () => _openGoogleMaps(selected['latitude'], selected['longitude']),
+                IconButton.outlined(
+                  tooltip: _showRoute ? 'Ẩn hướng đi' : 'Xem hướng đi trên bản đồ',
+                  onPressed: () => _showRoute ? setState(() => _showRoute = false) : _focus(selected),
                   style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-                  icon: const Icon(Icons.directions_outlined),
+                  isSelected: _showRoute,
+                  icon: const Icon(Icons.alt_route_outlined),
+                  selectedIcon: const Icon(Icons.route),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -285,17 +369,52 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
     );
   }
 
+  /// Dòng báo khi đang dùng vị trí mặc định (chưa cấp quyền / tắt GPS).
+  Widget? _locationBanner(ThemeData theme) {
+    final status = _app.locationStatus;
+    if (_app.hasRealLocation || status == LocationStatus.unknown) return null;
+    final cs = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
+      color: WarningTone.container(cs),
+      child: Row(
+        children: [
+          Icon(Icons.location_off_outlined, size: 18, color: WarningTone.onContainer(cs)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              LocationService.describe(status),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(color: WarningTone.onContainer(cs)),
+            ),
+          ),
+          TextButton(
+            onPressed: _locating ? null : () => _locate(force: true),
+            child: Text(
+              status == LocationStatus.serviceDisabled || status == LocationStatus.deniedForever
+                  ? 'Mở cài đặt'
+                  : 'Bật vị trí',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    if (widget.appState.venues.isEmpty) {
+    if (_app.venues.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
         child: EmptyState(icon: Icons.map_outlined, title: 'Chưa có cơ sở nào trên bản đồ'),
       );
     }
-    final selected = _focusedVenue ?? widget.appState.venues.first;
+    final selected = _focusedVenue ?? _app.venues.first;
+    final banner = _locationBanner(theme);
 
     return Column(
       children: [
@@ -311,7 +430,8 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${_visibleVenues().length}/${widget.appState.venues.length} sân (${_maxRadiusKm < 10.0 ? "≤${_maxRadiusKm.toInt()}km" : "tất cả"}).',
+                  '${_visibleVenues().length}/${_app.venues.length} sân '
+                  '(${_filtered ? "≤${_maxRadiusKm.toInt()}km" : "tất cả"}). Chạm ghim để chọn.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -319,49 +439,43 @@ class _S07MapDiscoveryScreenState extends State<S07MapDiscoveryScreen> {
               ),
               const SizedBox(width: 6),
               PopupMenuButton<double>(
-                tooltip: 'Lọc bán kính GPS',
+                tooltip: 'Lọc theo bán kính',
                 initialValue: _maxRadiusKm,
                 onSelected: (r) => setState(() => _maxRadiusKm = r),
                 itemBuilder: (context) => const [
                   PopupMenuItem(value: 2.0, child: Text('Bán kính ≤ 2 km')),
-                  PopupMenuItem(value: 3.0, child: Text('Bán kính ≤ 3 km')),
                   PopupMenuItem(value: 5.0, child: Text('Bán kính ≤ 5 km')),
-                  PopupMenuItem(value: 10.0, child: Text('Tất cả quanh Làng ĐH')),
+                  PopupMenuItem(value: 10.0, child: Text('Bán kính ≤ 10 km')),
+                  PopupMenuItem(value: 20.0, child: Text('Bán kính ≤ 20 km')),
+                  PopupMenuItem(value: double.infinity, child: Text('Tất cả')),
                 ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
-                    color: _maxRadiusKm < 10.0 ? cs.primaryContainer : cs.surfaceContainerHighest,
+                    color: _filtered ? cs.primaryContainer : cs.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.tune_outlined, size: 14, color: _maxRadiusKm < 10.0 ? cs.onPrimaryContainer : cs.onSurface),
+                      Icon(Icons.tune_outlined, size: 14, color: _filtered ? cs.onPrimaryContainer : cs.onSurface),
                       const SizedBox(width: 4),
                       Text(
-                        _maxRadiusKm < 10.0 ? '≤${_maxRadiusKm.toInt()}km' : 'Bán kính',
+                        _filtered ? '≤${_maxRadiusKm.toInt()}km' : 'Bán kính',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: _maxRadiusKm < 10.0 ? cs.onPrimaryContainer : cs.onSurface,
+                          color: _filtered ? cs.onPrimaryContainer : cs.onSurface,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              FilterChip(
-                avatar: const Icon(Icons.route, size: 16),
-                label: const Text('Tuyến'),
-                selected: _showRoute,
-                showCheckmark: false,
-                onSelected: (v) => setState(() => _showRoute = v),
-              ),
             ],
           ),
         ),
+        if (banner != null) banner,
         Expanded(
           child: OrientationBuilder(
             builder: (context, orientation) {

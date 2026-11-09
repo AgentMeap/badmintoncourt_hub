@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/location_service.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -26,6 +27,13 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
   bool _onlyFavorites = false;
 
   AppState get _app => widget.appState;
+
+  @override
+  void initState() {
+    super.initState();
+    // Lấy GPS để "Sân gần bạn" xếp theo khoảng cách thật (lần đầu hệ điều hành hỏi quyền)
+    _app.refreshLocation();
+  }
 
   @override
   void dispose() {
@@ -759,6 +767,32 @@ class _S06CustomerHomeScreenState extends State<S06CustomerHomeScreen> {
             '${venues.length} cơ sở đã kiểm duyệt',
             style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
+          if (!_app.hasRealLocation && _app.locationStatus != LocationStatus.unknown)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.location_off_outlined, size: 16, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      LocationService.describe(_app.locationStatus),
+                      style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final status = _app.locationStatus;
+                      if (status == LocationStatus.serviceDisabled || status == LocationStatus.deniedForever) {
+                        await LocationService.openSettings(status);
+                      }
+                      await _app.refreshLocation(force: true);
+                    },
+                    child: const Text('Bật vị trí'),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           if (venues.isEmpty) _buildEmptyState(context) else _buildVenueGrid(venues),
         ],

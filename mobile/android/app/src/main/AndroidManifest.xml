@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Nút micro ở Trợ lý AI (S17): chuyển giọng nói thành chữ bằng speech_to_text -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Vị trí GPS: tính khoảng cách tới sân (S06, S07) và gợi ý sân gần ở Trợ lý AI -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- usesCleartextTraffic: backend đồ án chạy http (10.0.2.2 / IP LAN). Khi deploy https thì bỏ đi -->
     <application
         android:label="Badminton Hub"

@@ -67,7 +67,11 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
   void initState() {
     super.initState();
     _msgCtrl.addListener(() => setState(() {}));
-    if (_isCustomer) _loadSession();
+    if (_isCustomer) {
+      _loadSession();
+      // Không hỏi quyền ở đây; chỉ dùng GPS nếu người dùng đã cho phép trước đó
+      _app.refreshLocation(askPermission: false);
+    }
   }
 
   @override
@@ -146,7 +150,12 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
     _scrollToBottom();
 
     try {
-      final res = await Repos.ai.chat(text, sessionId: _sessionId);
+      final res = await Repos.ai.chat(
+        text,
+        sessionId: _sessionId,
+        lat: _app.hasRealLocation ? _app.userLatitude : null,
+        lng: _app.hasRealLocation ? _app.userLongitude : null,
+      );
       if (!mounted) return;
       setState(() {
         _sessionId = res['sessionId'] ?? _sessionId;

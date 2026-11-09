@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/directions.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -11,17 +11,6 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 class S08VenueDetailScreen extends StatelessWidget {
   final AppState appState;
   const S08VenueDetailScreen({super.key, required this.appState});
-
-  void _openGoogleMaps(dynamic lat, dynamic lng) async {
-    final dLat = UiFmt.toNum(lat, 10.8753);
-    final dLng = UiFmt.toNum(lng, 106.8000);
-    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dLat,$dLng');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
-  }
 
   Widget _statTile(BuildContext context, IconData icon, String value, String label) {
     final theme = Theme.of(context);
@@ -264,13 +253,14 @@ class S08VenueDetailScreen extends StatelessWidget {
                       onPressed: () => appState.goTo('S07'),
                       style: OutlinedButton.styleFrom(minimumSize: const Size(0, 42)),
                       icon: const Icon(Icons.map_outlined, size: 18),
-                      label: const Text('Bản đồ Làng ĐH (S07)'),
+                      label: const Text('Xem trên bản đồ'),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: () => _openGoogleMaps(v['latitude'], v['longitude']),
+                      onPressed: () => showDirectionsSheet(context, v,
+                          distanceKm: v['distanceKm'] is num ? (v['distanceKm'] as num).toDouble() : null),
                       style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
                       icon: const Icon(Icons.directions_outlined, size: 18),
-                      label: const Text('Chỉ đường Google Maps'),
+                      label: const Text('Dẫn đường'),
                     ),
                   ],
                 ),

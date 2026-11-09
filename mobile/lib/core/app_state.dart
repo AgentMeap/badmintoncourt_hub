@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/google_auth_service.dart';
 import 'demo_seed.dart';
+import 'location_service.dart';
 import 'repositories/repositories.dart';
 
 class AppState extends ChangeNotifier {
@@ -221,6 +222,48 @@ class AppState extends ChangeNotifier {
   /// Kết quả kết nối máy chủ ở lần gọi gần nhất: null = chưa biết,
   /// false = không tới được máy chủ (đang hiển thị dữ liệu mẫu).
   bool? backendReachable;
+
+  // ---------------------------------------------------------------- Vị trí GPS
+
+  /// Vị trí dùng để tính khoảng cách tới sân. Chưa có GPS thì là Làng Đại học.
+  double userLatitude = LocationService.defaultLatitude;
+  double userLongitude = LocationService.defaultLongitude;
+  LocationStatus locationStatus = LocationStatus.unknown;
+  bool get hasRealLocation => locationStatus == LocationStatus.available;
+  bool _locating = false;
+  DateTime? _locatedAt;
+
+  /// Lấy GPS (hỏi quyền nếu [askPermission]) rồi tải lại danh sách sân để máy chủ
+  /// tính khoảng cách từ vị trí thật. Gọi lại trong 2 phút thì bỏ qua (trừ [force]).
+  Future<void> refreshLocation({bool askPermission = true, bool force = false}) async {
+    if (_locating) return;
+    final at = _locatedAt;
+    if (!force && hasRealLocation && at != null && DateTime.now().difference(at) < const Duration(minutes: 2)) {
+      return;
+    }
+    _locating = true;
+    try {
+      final res = await LocationService.current(askPermission: askPermission);
+      locationStatus = res.status;
+      if (res.status == LocationStatus.available) {
+        userLatitude = res.latitude!;
+        userLongitude = res.longitude!;
+        _locatedAt = DateTime.now();
+        await _reloadVenues();
+      }
+      notifyListeners();
+    } finally {
+      _locating = false;
+    }
+  }
+
+  Future<void> _reloadVenues() async {
+    try {
+      venues = await Repos.venue.list(lat: userLatitude, lng: userLongitude);
+    } catch (e) {
+      debugPrint('[venues] $e');
+    }
+  }
   bool get isOfflineDemo => backendReachable == false;
 
   /// Màn hình chính theo vai trò.
@@ -440,7 +483,7 @@ class AppState extends ChangeNotifier {
 
     try {
       await Future.wait([
-        load(() => Repos.venue.list(), (List<Json> v) => venues = v),
+        load(() => Repos.venue.list(lat: userLatitude, lng: userLongitude), (List<Json> v) => venues = v),
         load(() => Repos.match.list(), (List<Json> m) => matches = m),
         load(() => Repos.review.list(), (List<Json> r) => reviews = r),
         load(() => Repos.notification.list(userId), (List<Json> n) => notifications = n),

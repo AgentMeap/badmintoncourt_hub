@@ -61,10 +61,13 @@ class AiRepository {
 
   /// Gửi câu hỏi. Trả về `{sessionId, reply, inScope, cards, quickChips, quota}`.
   /// Quá 300 ký tự -> 400; vượt 5 tin/phút hoặc 30 tin/ngày -> 429.
-  Future<Json> chat(String message, {Object? sessionId}) async =>
+  /// [lat]/[lng]: vị trí người dùng để gợi ý sân gần (không gửi thì máy chủ dùng Làng Đại học).
+  Future<Json> chat(String message, {Object? sessionId, double? lat, double? lng}) async =>
       asJson(await _api.post('/ai/chat', {
         'message': message,
         if (sessionId != null) 'sessionId': sessionId,
+        if (lat != null && lng != null) 'lat': lat,
+        if (lat != null && lng != null) 'lng': lng,
       }));
 
   /// Phiên đang mở: `{sessionId, messages: [{role, content, cards, quickChips}], quota}`.
