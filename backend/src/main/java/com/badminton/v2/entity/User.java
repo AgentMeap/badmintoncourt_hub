@@ -23,6 +23,13 @@ public class User {
     private String introVideoUrl;
     private boolean isVerified;
     private boolean isActive;
+    /** Ảnh đại diện (lấy từ tài khoản Google khi đăng nhập bằng Google). */
+    private String avatarUrl;
+    /**
+     * false = tài khoản tạo bằng Google, chưa tự đặt mật khẩu (null = tài khoản cũ, coi như có).
+     * Nullable để SQLite thêm được cột vào bảng đã có dữ liệu.
+     */
+    private Boolean localPassword;
     private String createdAt;
 
     public User() {}
@@ -62,6 +69,10 @@ public class User {
     public boolean isVerified() { return isVerified; }
     public void setVerified(boolean verified) { isVerified = verified; }
     public boolean isActive() { return isActive; }
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+    public boolean hasLocalPassword() { return localPassword == null || localPassword; }
+    public void setLocalPassword(Boolean localPassword) { this.localPassword = localPassword; }
     public void setActive(boolean active) { isActive = active; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }

@@ -85,11 +85,17 @@ public class AuthController {
             if (!user.isActive()) {
                 return ResponseEntity.status(403).body(Map.of("error", "Tài khoản đã bị khóa bởi Quản trị viên"));
             }
+            boolean changed = false;
             if (!user.isVerified()) {
                 // Google đã xác thực email nên không cần OTP nữa
                 user.setVerified(true);
-                user = userRepository.save(user);
+                changed = true;
             }
+            if (firebaseUser.picture() != null && !firebaseUser.picture().equals(user.getAvatarUrl())) {
+                user.setAvatarUrl(firebaseUser.picture());
+                changed = true;
+            }
+            if (changed) user = userRepository.save(user);
         } else {
             String name = firebaseUser.name() != null && !firebaseUser.name().isBlank()
                     ? firebaseUser.name()
@@ -107,6 +113,9 @@ public class AuthController {
                     true,
                     LocalDateTime.now().format(FMT)
             ));
+            user.setAvatarUrl(firebaseUser.picture());
+            user.setLocalPassword(false);
+            user = userRepository.save(user);
             walletTransactionRepository.save(new WalletTransaction(
                     user.getId(),
                     "Thưởng chào mừng thành viên mới",
@@ -285,6 +294,7 @@ public class AuthController {
         }
         User user = opt.get();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setLocalPassword(true);
         user.setVerified(true);
         userRepository.save(user);
 
@@ -334,6 +344,10 @@ public class AuthController {
         if (opt.isEmpty()) return ResponseEntity.notFound().build();
         User u = opt.get();
 
+        if (!u.hasLocalPassword()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Tài khoản đăng nhập bằng Google chưa có mật khẩu. Hãy dùng \"Quên mật khẩu\" để tạo mật khẩu qua email."));
+        }
         if (!passwordEncoder.matches(currentPassword, u.getPasswordHash()) && !isDemoPassword(currentPassword)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Mật khẩu hiện tại không chính xác!"));
         }
@@ -358,6 +372,11 @@ public class AuthController {
     @Transactional
     public ResponseEntity<?> topUpWallet(@PathVariable Long userId, @RequestBody Map<String, Object> body) {
         CurrentUser.requireSelfOrAdmin(userId);
+        if (!emailOtpService.isDemoMode()) {
+            // Nạp tiền thật cần đi qua cổng thanh toán; endpoint cộng tiền trực tiếp chỉ dùng khi demo
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "Nạp tiền trực tiếp chỉ dùng ở chế độ demo. Vui lòng nạp qua cổng thanh toán."));
+        }
         double amount = Double.parseDouble(String.valueOf(body.getOrDefault("amount", 100000)));
         if (amount <= 0 || amount > 10_000_000) {
             return ResponseEntity.badRequest().body(Map.of("error", "Số tiền nạp phải từ 1đ đến 10.000.000đ."));
@@ -367,7 +386,7 @@ public class AuthController {
             userRepository.save(u);
             walletTransactionRepository.save(new WalletTransaction(
                     userId,
-                    "Nạp tiền vào Ví Cầu Lông qua QR PayOS",
+                    "Nạp tiền vào Ví Cầu Lông (demo)",
                     amount,
                     "TOPUP",
                     u.getWalletBalance(),
@@ -392,6 +411,10 @@ public class AuthController {
         map.put("role", user.getRole());
         map.put("skillLevel", user.getSkillLevel());
         map.put("introVideoUrl", user.getIntroVideoUrl() != null ? user.getIntroVideoUrl() : "");
+        map.put("avatarUrl", user.getAvatarUrl() != null ? user.getAvatarUrl() : "");
+        map.put("hasPassword", user.hasLocalPassword());
+        // App dùng để hiện nút nạp tiền demo
+        map.put("demoMode", emailOtpService.isDemoMode());
         map.put("walletBalance", user.getWalletBalance());
         map.put("verified", user.isVerified());
         map.put("active", user.isActive());

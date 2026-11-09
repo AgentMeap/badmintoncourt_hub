@@ -16,8 +16,9 @@ class S04ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _S04ForgotPasswordScreenState extends State<S04ForgotPasswordScreen> {
-  final _emailCtrl = TextEditingController(text: 'customer@badminton.vn');
-  final _newPassCtrl = TextEditingController(text: '123456');
+  // Điền sẵn email của phiên hiện tại (VD tài khoản Google tạo mật khẩu từ S29)
+  late final _emailCtrl = TextEditingController(text: widget.appState.email);
+  final _newPassCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
 

@@ -5,13 +5,16 @@ import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 import 'package:badminton_v2_mobile/core/video_input.dart';
 import 'package:badminton_v2_mobile/core/video_link.dart';
+import 'package:badminton_v2_mobile/core/widgets/user_avatar.dart';
 
 // S29: Sửa hồ sơ & đổi mật khẩu
 // - Sửa họ tên, số điện thoại, trình độ (trình độ dùng để gợi ý kèo ở S15 / S17)
 // - Video giới thiệu trình độ: dán link (YouTube / .mp4) hoặc tải từ thư viện điện thoại; chủ kèo xem khi bạn xin vào kèo (S15),
 //   người khác xem khi bạn làm chủ kèo (S30)
 // - Email chỉ xem (dùng để đăng nhập & nhận OTP)
-// - Đổi mật khẩu: mật khẩu hiện tại + mới + nhập lại; kiểm tra độ dài, khớp, khác mật khẩu cũ
+// - Đổi mật khẩu: mật khẩu hiện tại + mới + nhập lại; kiểm tra độ dài, khớp, khác mật khẩu cũ.
+//   Tài khoản tạo bằng Google chưa có mật khẩu: hướng dẫn tạo qua "Quên mật khẩu" (OTP email).
+// - Ảnh đại diện lấy từ tài khoản Google (nếu có), không sửa ở đây.
 class S29EditProfileScreen extends StatefulWidget {
   final AppState appState;
   const S29EditProfileScreen({super.key, required this.appState});
@@ -192,8 +195,20 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       child: ListView(
         padding: Responsive.screenPadding(context),
         children: [
-          Text('Hồ sơ của tôi',
-              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+          Row(
+            children: [
+              UserAvatar(
+                name: _app.fullName.split('(').first.trim(),
+                url: _app.avatarUrl,
+                radius: 30,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text('Hồ sơ của tôi',
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
 
           const SectionHeader('Thông tin cá nhân'),
@@ -278,26 +293,41 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
           const SizedBox(height: 32),
 
           const SectionHeader('Đổi mật khẩu'),
-          AutofillGroup(
-            child: Column(
-              children: [
-                _passField(_currentPassCtrl, 'Mật khẩu hiện tại', const [AutofillHints.password]),
-                const SizedBox(height: 12),
-                _passField(_newPassCtrl, 'Mật khẩu mới', const [AutofillHints.newPassword],
-                    helper: 'Ít nhất 6 ký tự, khác mật khẩu hiện tại'),
-                const SizedBox(height: 12),
-                _passField(_confirmPassCtrl, 'Nhập lại mật khẩu mới', const [AutofillHints.newPassword]),
-              ],
+          if (!_app.hasPassword) ...[
+            const NoteBox(
+              'Tài khoản đăng nhập bằng Google chưa có mật khẩu riêng. '
+              'Tạo mật khẩu qua mã OTP gửi về email để đăng nhập được bằng email + mật khẩu.',
+              icon: Icons.info_outline,
             ),
-          ),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            label: 'Đổi mật khẩu',
-            icon: Icons.lock_reset,
-            tonal: true,
-            loading: _savingPass,
-            onPressed: _changePassword,
-          ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Tạo mật khẩu qua email',
+              icon: Icons.mark_email_read_outlined,
+              tonal: true,
+              onPressed: () => _app.goTo('S04'),
+            ),
+          ] else ...[
+            AutofillGroup(
+              child: Column(
+                children: [
+                  _passField(_currentPassCtrl, 'Mật khẩu hiện tại', const [AutofillHints.password]),
+                  const SizedBox(height: 12),
+                  _passField(_newPassCtrl, 'Mật khẩu mới', const [AutofillHints.newPassword],
+                      helper: 'Ít nhất 6 ký tự, khác mật khẩu hiện tại'),
+                  const SizedBox(height: 12),
+                  _passField(_confirmPassCtrl, 'Nhập lại mật khẩu mới', const [AutofillHints.newPassword]),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              label: 'Đổi mật khẩu',
+              icon: Icons.lock_reset,
+              tonal: true,
+              loading: _savingPass,
+              onPressed: _changePassword,
+            ),
+          ],
           const SizedBox(height: 8),
         ],
       ),

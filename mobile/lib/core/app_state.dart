@@ -24,6 +24,12 @@ class AppState extends ChangeNotifier {
   String skillLevel = 'TB_YEU';
   // Link video giới thiệu trình độ (YouTube / .mp4), sửa ở S29; trống = chưa có
   String introVideoUrl = '';
+  /// Ảnh đại diện (từ tài khoản Google); trống = hiện chữ cái đầu của tên.
+  String avatarUrl = '';
+  /// false = tài khoản tạo bằng Google, chưa đặt mật khẩu riêng (S29 ẩn phần đổi mật khẩu).
+  bool hasPassword = true;
+  /// Máy chủ đang bật chế độ demo (cho phép nạp tiền Ví trực tiếp ở S18).
+  bool serverDemoMode = true;
   double walletBalance = 350000;
   String lastOtpEmail = 'customer@badminton.vn';
   String lastOtpPurpose = 'REGISTER';
@@ -170,6 +176,8 @@ class AppState extends ChangeNotifier {
   /// nên bấm qua lại giữa các tab không làm lịch sử dài ra, Back từ tab bất kỳ về tab chính.
   void goToTab(String tab, String home) {
     _releaseAbandonedHold(tab);
+    // Cập nhật số thông báo chưa đọc trên AppBar khi người dùng chuyển tab
+    refreshNotifications(minInterval: const Duration(seconds: 30));
     history
       ..clear()
       ..add(home);
@@ -223,6 +231,9 @@ class AppState extends ChangeNotifier {
     role = res['role']?.toString() ?? role;
     skillLevel = res['skillLevel']?.toString() ?? skillLevel;
     if (res.containsKey('introVideoUrl')) introVideoUrl = res['introVideoUrl']?.toString() ?? '';
+    if (res.containsKey('avatarUrl')) avatarUrl = res['avatarUrl']?.toString() ?? '';
+    if (res['hasPassword'] is bool) hasPassword = res['hasPassword'] as bool;
+    if (res['demoMode'] is bool) serverDemoMode = res['demoMode'] as bool;
     final balance = asNum(res['walletBalance']);
     if (balance != null) walletBalance = balance.toDouble();
   }
@@ -284,6 +295,8 @@ class AppState extends ChangeNotifier {
     'auth_role',
     'auth_skill',
     'auth_intro_video',
+    'auth_avatar',
+    'auth_has_password',
   ];
 
   Future<void> saveSession({String? token}) async {
@@ -297,6 +310,8 @@ class AppState extends ChangeNotifier {
       await sp.setString('auth_role', role);
       await sp.setString('auth_skill', skillLevel);
       await sp.setString('auth_intro_video', introVideoUrl);
+      await sp.setString('auth_avatar', avatarUrl);
+      await sp.setBool('auth_has_password', hasPassword);
     } catch (_) {}
   }
 
@@ -312,6 +327,8 @@ class AppState extends ChangeNotifier {
         role = sp.getString('auth_role') ?? role;
         skillLevel = sp.getString('auth_skill') ?? skillLevel;
         introVideoUrl = sp.getString('auth_intro_video') ?? introVideoUrl;
+        avatarUrl = sp.getString('auth_avatar') ?? avatarUrl;
+        hasPassword = sp.getBool('auth_has_password') ?? hasPassword;
         ApiClient.instance.token = sp.getString('auth_token');
         resetTo(homeScreen);
       }
@@ -324,6 +341,29 @@ class AppState extends ChangeNotifier {
         searchHistory = List<String>.from(historyList);
       }
     } catch (_) {}
+  }
+
+  DateTime? _notificationsLoadedAt;
+
+  /// Tải lại thông báo. [minInterval]: bỏ qua nếu vừa tải gần đây (dùng khi đổi tab).
+  Future<void> refreshNotifications({Duration? minInterval}) async {
+    final last = _notificationsLoadedAt;
+    if (minInterval != null && last != null && DateTime.now().difference(last) < minInterval) return;
+    _notificationsLoadedAt = DateTime.now();
+    try {
+      notifications = await Repos.notification.list(userId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[notifications] $e');
+    }
+  }
+
+  /// Nạp tiền vào Ví (chỉ khi máy chủ bật chế độ demo). Lỗi -> ApiException.
+  Future<void> topUpWallet(num amount) async {
+    final res = await Repos.auth.topUpWallet(userId, amount);
+    _applyUserFields(res);
+    notifyListeners();
+    await refreshWallet();
   }
 
   /// Gửi mã OTP tới email của tài khoản đang đăng nhập (rút ví WITHDRAW_WALLET, giải ngân PAYOUT)
