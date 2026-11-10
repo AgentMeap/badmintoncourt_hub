@@ -79,7 +79,7 @@ class _VenueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final image = venue['imageUrl']?.toString() ?? '';
+    final image = VenueCoverImage.resolveUrl(venue['imageUrl']) ?? '';
     return SurfaceCard(
       padding: const EdgeInsets.all(10),
       onTap: () => onTap(venue),

@@ -1,5 +1,7 @@
 package com.badminton.v2.controller;
 
+import com.badminton.v2.service.VenueImageService;
+
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
@@ -24,6 +26,7 @@ public class VenueController {
     private final MatchPostRepository matchPostRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final VenueImageService venueImageService;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public VenueController(VenueRepository venueRepository,
@@ -32,7 +35,8 @@ public class VenueController {
                            BookingRepository bookingRepository,
                            MatchPostRepository matchPostRepository,
                            UserRepository userRepository,
-                           NotificationService notificationService) {
+                           NotificationService notificationService,
+                           VenueImageService venueImageService) {
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.pricingRuleRepository = pricingRuleRepository;
@@ -40,6 +44,7 @@ public class VenueController {
         this.matchPostRepository = matchPostRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.venueImageService = venueImageService;
     }
 
     @GetMapping
@@ -160,6 +165,8 @@ public class VenueController {
                 LocalDateTime.now().format(FMT)
         );
         venue = venueRepository.save(venue);
+        // Ảnh lấy từ thư mục backend/venue-images (nếu có), cần id nên gán sau khi lưu
+        if (venueImageService.assign(venue)) venue = venueRepository.save(venue);
 
         for (int i = 1; i <= totalCourts; i++) {
             courtRepository.save(new Court(venue.getId(), "Sân " + i, i == 1 ? "VIP" : "STANDARD", true));

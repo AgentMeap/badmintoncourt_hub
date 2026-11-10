@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:badminton_v2_mobile/core/api/api_client.dart';
 
 /// Bộ tiện ích giao diện dùng chung (design system "Badminton Hub" - skill ui-ux-pro-max).
 /// Mọi màu đều suy ra từ ColorScheme của Theme, không hardcode.
@@ -689,13 +690,22 @@ class SkillLevel {
 /// giải mã đúng kích thước hiển thị (cacheWidth) để tiết kiệm bộ nhớ, lỗi tải thì
 /// giữ nguyên gradient. Ảnh là trang trí nên ẩn khỏi trình đọc màn hình.
 class VenueCoverImage extends StatelessWidget {
+  /// Link ảnh cơ sở dùng được để tải: link đầy đủ giữ nguyên, đường dẫn trên máy chủ
+  /// (VD /venue-images/1.jpg) được ghép với địa chỉ backend.
+  static String? resolveUrl(Object? raw) {
+    final url = raw?.toString().trim() ?? '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/')) return '${ApiClient.origin}$url';
+    return null;
+  }
+
   final Map<String, dynamic> venue;
   const VenueCoverImage({super.key, required this.venue});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final url = venue['imageUrl']?.toString();
+    final url = resolveUrl(venue['imageUrl']);
     final gradient = BoxDecoration(
       gradient: LinearGradient(
         begin: Alignment.topLeft,
@@ -703,7 +713,7 @@ class VenueCoverImage extends StatelessWidget {
         colors: venueCoverColors(cs, venue),
       ),
     );
-    if (url == null || !url.startsWith('http')) {
+    if (url == null) {
       return DecoratedBox(decoration: gradient, child: const SizedBox.expand());
     }
     final reduceMotion = MediaQuery.of(context).disableAnimations;

@@ -38,6 +38,10 @@ public class AppConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations("file:./uploads/");
+        // Ảnh cơ sở (xem backend/venue-images/README.md)
+        registry.addResourceHandler(com.badminton.v2.service.VenueImageService.URL_PREFIX + "**")
+                .addResourceLocations("file:./" + com.badminton.v2.service.VenueImageService.DIR + "/")
+                .setCachePeriod(3600);
     }
 
     @Bean
