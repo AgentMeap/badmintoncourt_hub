@@ -66,7 +66,7 @@ app:
     cancel-url: ${PAYOS_CANCEL_URL:https://badminton-v2.demo/payment/cancel}
   gemini:
     api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.5-flash}
+    model: ${GEMINI_MODEL:gemini-3.8-flash}
   # Thông báo đẩy (Firebase Cloud Messaging): đường dẫn file JSON service account. Trống = tắt đẩy.
   fcm:
     credentials-file: ${FCM_CREDENTIALS_FILE:}

@@ -83,6 +83,7 @@ public class VenueImageService {
 
     /** Gán ảnh cho một cơ sở (gọi sau khi lưu để đã có id). Trả về true nếu đổi ảnh. */
     public boolean assign(Venue v) {
+        if (v.hasUploadedImages()) return false; // ảnh chủ sân tự tải lên được giữ nguyên
         String url = pick(scan(), v);
         if (url == null || url.equals(v.getImageUrl())) return false;
         v.setImageUrl(url);
@@ -99,6 +100,7 @@ public class VenueImageService {
         }
         int changed = 0;
         for (Venue v : venueRepository.findAll()) {
+            if (v.hasUploadedImages()) continue;
             String url = pick(images, v);
             if (url != null && !url.equals(v.getImageUrl())) {
                 v.setImageUrl(url);

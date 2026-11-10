@@ -68,8 +68,9 @@ class ApiClient {
   Future<dynamic> get(String path, {Map<String, Object?>? query}) =>
       send('GET', path, query: query);
 
-  Future<dynamic> post(String path, [Object? body]) =>
-      send('POST', path, body: body ?? const <String, dynamic>{});
+  /// [timeout]: ghi đè thời gian chờ cho request chậm (VD trợ lý AI).
+  Future<dynamic> post(String path, [Object? body, Duration? timeout]) =>
+      send('POST', path, body: body ?? const <String, dynamic>{}, timeout: timeout);
 
   Future<dynamic> put(String path, [Object? body]) =>
       send('PUT', path, body: body ?? const <String, dynamic>{});
@@ -95,7 +96,9 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, Object?>? query,
+    Duration? timeout,
   }) async {
+    final wait = timeout ?? this.timeout;
     final request = http.Request(method, uri(path, query))
       ..headers.addAll(headers(json: body != null));
     if (body != null) request.body = jsonEncode(body);
@@ -103,8 +106,8 @@ class ApiClient {
 
     final http.Response response;
     try {
-      final streamed = await _http.send(request).timeout(timeout);
-      response = await http.Response.fromStream(streamed).timeout(timeout);
+      final streamed = await _http.send(request).timeout(wait);
+      response = await http.Response.fromStream(streamed).timeout(wait);
     } on TimeoutException {
       throw ApiException.timeout();
     } catch (e) {

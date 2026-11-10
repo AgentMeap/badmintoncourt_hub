@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/google_auth_service.dart';
 import 'demo_seed.dart';
 import 'location_service.dart';
+import 'match_deposit.dart';
 import 'push/push_service.dart';
 import 'repositories/repositories.dart';
 
@@ -26,6 +27,19 @@ class AppState extends ChangeNotifier {
   String phone = '0909123456';
   String role = 'CUSTOMER'; // CUSTOMER | COURT_OWNER | ADMIN
   String skillLevel = 'TB_YEU';
+  /// MALE / FEMALE, rỗng = chưa cập nhật (kèo có giá nam / nữ riêng dùng để tính phí).
+  String _gender = '';
+  String get gender => _gender;
+  set gender(String value) {
+    _gender = value;
+    MatchDeposit.viewerGender = value.isEmpty ? null : value;
+  }
+
+  /// false = tài khoản mới (đăng ký / Google) chưa chọn giới tính, trình độ.
+  bool profileCompleted = true;
+
+  /// Người chơi mới cần hoàn thiện hồ sơ ngay sau khi đăng nhập.
+  bool get needsProfileSetup => role == 'CUSTOMER' && (!profileCompleted || gender.isEmpty);
   // Link video giới thiệu trình độ (YouTube / .mp4), sửa ở S29; trống = chưa có
   String introVideoUrl = '';
   /// Ảnh đại diện (từ tài khoản Google); trống = hiện chữ cái đầu của tên.
@@ -298,6 +312,14 @@ class AppState extends ChangeNotifier {
   }
   bool get isOfflineDemo => backendReachable == false;
 
+  /// Vào app sau khi đăng nhập / xác thực: về màn chính, người chơi mới thì mở luôn
+  /// màn hồ sơ (S29) để chọn giới tính và trình độ (Back sẽ về màn chính).
+  void enterAfterLogin() {
+    resetTo(homeScreen);
+    if (needsProfileSetup) goTo('S29');
+    syncFromBackend();
+  }
+
   /// Màn hình chính theo vai trò.
   String get homeScreen => role == 'COURT_OWNER' ? 'S19' : (role == 'ADMIN' ? 'S24' : 'S06');
 
@@ -321,6 +343,8 @@ class AppState extends ChangeNotifier {
     phone = res['phone']?.toString() ?? phone;
     role = res['role']?.toString() ?? role;
     skillLevel = res['skillLevel']?.toString() ?? skillLevel;
+    if (res.containsKey('gender')) gender = res['gender']?.toString() ?? '';
+    if (res['profileCompleted'] is bool) profileCompleted = res['profileCompleted'] as bool;
     if (res.containsKey('introVideoUrl')) introVideoUrl = res['introVideoUrl']?.toString() ?? '';
     if (res.containsKey('avatarUrl')) avatarUrl = res['avatarUrl']?.toString() ?? '';
     if (res['hasPassword'] is bool) hasPassword = res['hasPassword'] as bool;
@@ -400,6 +424,8 @@ class AppState extends ChangeNotifier {
       await sp.setString('auth_phone', phone);
       await sp.setString('auth_role', role);
       await sp.setString('auth_skill', skillLevel);
+      await sp.setString('auth_gender', gender);
+      await sp.setBool('auth_profile_completed', profileCompleted);
       await sp.setString('auth_intro_video', introVideoUrl);
       await sp.setString('auth_avatar', avatarUrl);
       await sp.setBool('auth_has_password', hasPassword);
@@ -417,6 +443,8 @@ class AppState extends ChangeNotifier {
         phone = sp.getString('auth_phone') ?? phone;
         role = sp.getString('auth_role') ?? role;
         skillLevel = sp.getString('auth_skill') ?? skillLevel;
+        gender = sp.getString('auth_gender') ?? '';
+        profileCompleted = sp.getBool('auth_profile_completed') ?? true;
         introVideoUrl = sp.getString('auth_intro_video') ?? introVideoUrl;
         avatarUrl = sp.getString('auth_avatar') ?? avatarUrl;
         hasPassword = sp.getBool('auth_has_password') ?? hasPassword;

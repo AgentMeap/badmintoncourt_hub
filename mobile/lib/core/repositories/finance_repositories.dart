@@ -77,6 +77,9 @@ class AdminRepository {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       }));
 
+  /// Tạo tài khoản chủ sân: {fullName, email, phone, password}. Trả về {id, fullName, email, phone, role}.
+  Future<Json> createCourtOwner(Json body) async => asJson(await _api.post('/admin/users', body));
+
   Future<Json> toggleUserActive(Object userId) async =>
       asJson(await _api.patch('/admin/users/$userId/toggle-active'));
 

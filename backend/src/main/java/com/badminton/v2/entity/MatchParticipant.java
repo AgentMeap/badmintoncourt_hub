@@ -14,6 +14,8 @@ public class MatchParticipant {
     private String userName;
     private String userSkill;
     private String userPhone;
+    /** Giới tính lúc xin vào kèo (để chủ kèo thấy và tính đúng phí). */
+    private String userGender;
     private String status; // PENDING, APPROVED, REJECTED, REMOVED
     private String joinedAt;
     /** Lý do chủ kèo từ chối (có thể trống). */
@@ -51,4 +53,7 @@ public class MatchParticipant {
     public void setDepositStatus(String depositStatus) { this.depositStatus = depositStatus; }
     public Double getRefundedAmount() { return refundedAmount; }
     public void setRefundedAmount(Double refundedAmount) { this.refundedAmount = refundedAmount; }
+
+    public String getUserGender() { return userGender; }
+    public void setUserGender(String userGender) { this.userGender = userGender; }
 }

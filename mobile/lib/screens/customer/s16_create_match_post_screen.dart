@@ -27,7 +27,12 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
   final _titleCtrl = TextEditingController(
     text: 'Giao lưu cầu lông tối nay - Tuyển thêm 2 nam/nữ đánh đôi vui vẻ',
   );
-  final _feeCtrl = TextEditingController(text: '65000');
+  /// Phí mỗi người theo giới tính (VD nam 70k, nữ 55k); nhập bằng nhau nếu chia đều.
+  final _feeMaleCtrl = TextEditingController(text: '70000');
+  final _feeFemaleCtrl = TextEditingController(text: '55000');
+
+  double? get _feeMale => double.tryParse(_feeMaleCtrl.text);
+  double? get _feeFemale => double.tryParse(_feeFemaleCtrl.text);
   String _skill = 'TB_YEU';
   int _currentPlayers = 2;
   int _maxPlayers = 6;
@@ -41,7 +46,8 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _feeCtrl.dispose();
+    _feeMaleCtrl.dispose();
+    _feeFemaleCtrl.dispose();
     super.dispose();
   }
 
@@ -56,8 +62,8 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
       error = 'Vé này đã hủy, không thể mở kèo.';
     } else if (_titleCtrl.text.trim().length < 5) {
       error = 'Tiêu đề cần ít nhất 5 ký tự.';
-    } else if ((double.tryParse(_feeCtrl.text) ?? -1) < 0) {
-      error = 'Chi phí mỗi người chưa hợp lệ.';
+    } else if ((_feeMale ?? -1) < 0 || (_feeFemale ?? -1) < 0) {
+      error = 'Nhập phí cho nam và nữ (có thể bằng nhau).';
     } else {
       error = VideoLink.validate(_videoUrl);
     }
@@ -84,7 +90,9 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
       'requiredSkill': _skill,
       'maxPlayers': _maxPlayers,
       'currentPlayers': _currentPlayers,
-      'feePerPlayer': double.tryParse(_feeCtrl.text) ?? 65000,
+      'feePerPlayer': (_feeMale ?? 0) > (_feeFemale ?? 0) ? _feeMale : _feeFemale,
+      'feeMale': _feeMale,
+      'feeFemale': _feeFemale,
       'depositPercent': _depositPercent,
       'status': 'OPEN',
       if (video != null) 'videoUrl': video.url,
@@ -207,19 +215,44 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _feeCtrl,
-            onChanged: (_) => setState(() {}), // cập nhật số tiền cọc xem trước
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-              labelText: 'Chi phí mỗi người',
-              helperText: 'Gồm tiền sân và cầu, chia đều',
-              suffixText: 'đ',
-              prefixIcon: Icon(Icons.payments_outlined),
-              border: OutlineInputBorder(),
-            ),
+          const SectionHeader('Chi phí mỗi người (sân + cầu)'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _feeMaleCtrl,
+                  onChanged: (_) => setState(() {}), // cập nhật số tiền cọc xem trước
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Nam',
+                    suffixText: 'đ',
+                    prefixIcon: Icon(Icons.male),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _feeFemaleCtrl,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Nữ',
+                    suffixText: 'đ',
+                    prefixIcon: Icon(Icons.female),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 6),
+          Text('Mỗi người trả theo giới tính trong hồ sơ. Nhập bằng nhau nếu chia đều.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 20),
           const SectionHeader('Cọc trước qua ví'),
           SizedBox(
@@ -237,12 +270,13 @@ class _S16CreateMatchPostScreenState extends State<S16CreateMatchPostScreen> {
           ),
           const SizedBox(height: 8),
           Builder(builder: (_) {
-            final fee = double.tryParse(_feeCtrl.text) ?? 0;
-            final deposit = MatchDeposit.amountFor(fee, _depositPercent);
+            final male = MatchDeposit.amountFor(_feeMale ?? 0, _depositPercent);
+            final female = MatchDeposit.amountFor(_feeFemale ?? 0, _depositPercent);
+            final deposit = male == female ? UiFmt.vnd(male) : '${UiFmt.vnd(male)} (nam) / ${UiFmt.vnd(female)} (nữ)';
             return NoteBox(
               _depositPercent == 0
                   ? 'Không cần cọc: người chơi trả toàn bộ tại sân. Dễ có người xin vào rồi không đến.'
-                  : 'Mỗi người cọc ${UiFmt.vnd(deposit)} qua ví khi xin vào kèo, phần còn lại trả tại sân. '
+                  : 'Mỗi người cọc $deposit qua ví khi xin vào kèo, phần còn lại trả tại sân. '
                       'Bạn nhận tiền cọc vào ví sau khi kèo kết thúc.\n${MatchDeposit.policyText}',
               icon: _depositPercent == 0 ? Icons.info_outline : Icons.verified_user_outlined,
               tone: _depositPercent == 0 ? NoteTone.info : NoteTone.success,

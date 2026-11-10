@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/match_deposit.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 import 'package:badminton_v2_mobile/core/video_input.dart';
@@ -8,7 +9,8 @@ import 'package:badminton_v2_mobile/core/video_link.dart';
 import 'package:badminton_v2_mobile/core/widgets/user_avatar.dart';
 
 // S29: Sửa hồ sơ & đổi mật khẩu
-// - Sửa họ tên, số điện thoại, trình độ (trình độ dùng để gợi ý kèo ở S15 / S17)
+// - Sửa họ tên, số điện thoại, giới tính (tính phí kèo giá nam / nữ), trình độ (gợi ý kèo ở S15 / S17)
+// - Người chơi mới (đăng ký / Google) được đưa vào đây ngay sau khi đăng nhập để hoàn thiện hồ sơ
 // - Video giới thiệu trình độ: dán link (YouTube / .mp4) hoặc tải từ thư viện điện thoại; chủ kèo xem khi bạn xin vào kèo (S15),
 //   người khác xem khi bạn làm chủ kèo (S30)
 // - Email chỉ xem (dùng để đăng nhập & nhận OTP)
@@ -27,6 +29,9 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
   late String _skill;
+  late String _gender;
+  /// Mở màn này ngay sau khi đăng nhập lần đầu (chưa chọn giới tính / trình độ).
+  late final bool _onboarding;
   late String _videoUrl;
   bool _videoBusy = false;
   final _currentPassCtrl = TextEditingController();
@@ -50,6 +55,8 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
     _nameCtrl = TextEditingController(text: _app.fullName.split('(').first.trim());
     _phoneCtrl = TextEditingController(text: _app.phone);
     _skill = _app.skillLevel;
+    _gender = _app.gender;
+    _onboarding = _app.needsProfileSetup;
     _videoUrl = _app.introVideoUrl;
   }
 
@@ -73,6 +80,7 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _nameCtrl.text.trim() != _app.fullName.split('(').first.trim() ||
       _phoneCtrl.text.trim() != _app.phone ||
       _skill != _app.skillLevel ||
+      _gender != _app.gender ||
       _videoUrl.trim() != _app.introVideoUrl;
 
   Future<void> _saveProfile() async {
@@ -87,6 +95,10 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _toast('Số điện thoại cần 10 chữ số, bắt đầu bằng 0.');
       return;
     }
+    if (_app.role == 'CUSTOMER' && _gender.isEmpty) {
+      _toast('Vui lòng chọn giới tính (dùng để tính phí kèo nam / nữ).');
+      return;
+    }
     final videoError = VideoLink.validate(_videoUrl);
     if (videoError != null) {
       _toast(videoError);
@@ -99,6 +111,7 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
         'fullName': name,
         'phone': phone,
         'skillLevel': _skill,
+        if (_gender.isNotEmpty) 'gender': _gender,
         'introVideoUrl': videoUrl,
       });
     } catch (e) {
@@ -112,11 +125,18 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
       _app.fullName = '$name$_roleSuffix';
       _app.phone = phone;
       _app.skillLevel = _skill;
+      if (_gender.isNotEmpty) _app.gender = _gender;
+      _app.profileCompleted = true;
       _app.introVideoUrl = videoUrl;
       _videoUrl = videoUrl;
       _savingProfile = false;
     });
     _app.saveSession();
+    if (_onboarding) {
+      _toast('Hồ sơ đã sẵn sàng. Chúc bạn tìm được kèo hợp ý!');
+      _app.resetTo(_app.homeScreen);
+      return;
+    }
     _toast('Đã lưu hồ sơ.');
   }
 
@@ -210,6 +230,15 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
             ],
           ),
           const SizedBox(height: 16),
+          if (_onboarding) ...[
+            const NoteBox(
+              'Chào mừng bạn! Hoàn thiện hồ sơ để nhận gợi ý kèo đúng trình độ và đúng mức phí '
+              '(nhiều kèo có giá riêng cho nam và nữ).',
+              icon: Icons.waving_hand_outlined,
+              tone: NoteTone.success,
+            ),
+            const SizedBox(height: 16),
+          ],
 
           const SectionHeader('Thông tin cá nhân'),
           AutofillGroup(
@@ -253,6 +282,24 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          Text('Giới tính', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Kèo có thể đặt giá riêng cho nam và nữ.',
+              style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final g in Gender.codes)
+                ChoiceChip(
+                  avatar: Icon(g == 'MALE' ? Icons.male : Icons.female, size: 18),
+                  label: Text(Gender.label(g)),
+                  selected: _gender == g,
+                  onSelected: (_) => setState(() => _gender = g),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Text('Trình độ cầu lông', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           Text('Dùng để gợi ý kèo giao lưu phù hợp.',
@@ -285,11 +332,16 @@ class _S29EditProfileScreenState extends State<S29EditProfileScreen> {
           ),
           const SizedBox(height: 16),
           PrimaryButton(
-            label: 'Lưu hồ sơ',
-            icon: Icons.save_outlined,
+            label: _onboarding ? 'Hoàn tất hồ sơ' : 'Lưu hồ sơ',
+            icon: _onboarding ? Icons.check_circle_outline : Icons.save_outlined,
             loading: _savingProfile,
-            onPressed: _profileChanged && !_videoBusy ? _saveProfile : null,
+            onPressed: (_onboarding || _profileChanged) && !_videoBusy ? _saveProfile : null,
           ),
+          if (_onboarding)
+            TextButton(
+              onPressed: () => _app.resetTo(_app.homeScreen),
+              child: const Text('Để sau'),
+            ),
           const SizedBox(height: 32),
 
           const SectionHeader('Đổi mật khẩu'),

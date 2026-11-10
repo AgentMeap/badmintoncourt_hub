@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Chủ sân thứ hai để trình bày dòng tiền theo từng chủ sân (sân của chủ A -> tiền của chủ A).
+ * Tài khoản demo thêm. Chủ sân thứ hai để trình bày dòng tiền theo từng chủ sân (sân của chủ A -> tiền của chủ A).
  * Chạy sau DataSeeder, kể cả khi database đã có dữ liệu: nếu chưa có owner2@badminton.vn thì tạo
  * và chuyển 4 cơ sở đã duyệt (chưa có vé nào) của owner@badminton.vn sang. Tắt bằng APP_DEMO_SECOND_OWNER=false.
  */
@@ -30,6 +30,7 @@ public class DemoOwnerSeeder {
     public static final String OWNER2_EMAIL = "owner2@badminton.vn";
     private static final String OWNER1_EMAIL = "owner@badminton.vn";
     private static final int VENUES_TO_MOVE = 4;
+    public static final String PLAYER_FEMALE_EMAIL = "lan@badminton.vn";
 
     private final UserRepository userRepository;
     private final VenueRepository venueRepository;
@@ -52,7 +53,36 @@ public class DemoOwnerSeeder {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seed() {
-        if (!enabled || userRepository.findByEmailIgnoreCase(OWNER2_EMAIL).isPresent()) return;
+        if (!enabled) return;
+        seedPlayers();
+        seedSecondOwner();
+    }
+
+    /**
+     * Người chơi demo: đặt giới tính cho tài khoản mẫu cũ (chưa có) và thêm một người chơi nữ
+     * (lan@badminton.vn) để trình bày kèo có giá nam / nữ khác nhau.
+     */
+    private void seedPlayers() {
+        for (String email : List.of("customer@badminton.vn", "hoang@badminton.vn", OWNER1_EMAIL)) {
+            userRepository.findByEmailIgnoreCase(email).ifPresent(u -> {
+                if (u.getGender() == null) {
+                    u.setGender("MALE");
+                    userRepository.save(u);
+                }
+            });
+        }
+        if (userRepository.findByEmailIgnoreCase(PLAYER_FEMALE_EMAIL).isEmpty()) {
+            String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            User lan = new User("Nguyễn Ngọc Lan", PLAYER_FEMALE_EMAIL, "0906555444",
+                    passwordEncoder.encode("123456"), "CUSTOMER", "TB_YEU", 300000.0, true, true, now);
+            lan.setGender("FEMALE");
+            userRepository.save(lan);
+            log.info("Đã tạo người chơi nữ demo {}", PLAYER_FEMALE_EMAIL);
+        }
+    }
+
+    private void seedSecondOwner() {
+        if (userRepository.findByEmailIgnoreCase(OWNER2_EMAIL).isPresent()) return;
         User owner1 = userRepository.findByEmailIgnoreCase(OWNER1_EMAIL).orElse(null);
         if (owner1 == null) return;
 

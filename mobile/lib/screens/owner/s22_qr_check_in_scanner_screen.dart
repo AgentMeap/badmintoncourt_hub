@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
 import 'package:badminton_v2_mobile/core/booking_rules.dart';
@@ -9,6 +12,8 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 // Giao diện theo design system + sửa logic: trước đây nhập mã BẤT KỲ cũng báo
 // "check-in thành công". Giờ mã được tra trong danh sách vé, kiểm tra trạng thái
 // (đã hủy / đã check-in / chưa thanh toán / không đúng ngày) và hiện kết quả rõ ràng.
+// Quét bằng camera (mobile_scanner) trên Android / iOS / macOS / Web; quét được thì tự kiểm tra mã.
+// Máy không có camera (Windows, Linux) hoặc bị từ chối quyền: vẫn nhập mã tay như cũ.
 class S22QrCheckInScannerScreen extends StatefulWidget {
   final AppState appState;
   const S22QrCheckInScannerScreen({super.key, required this.appState});
@@ -18,17 +23,65 @@ class S22QrCheckInScannerScreen extends StatefulWidget {
 }
 
 class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
-  final _codeCtrl = TextEditingController(text: 'QR-BK-202610');
+  final _codeCtrl = TextEditingController();
   Map<String, dynamic>? _found;
   String? _error;
   bool _busy = false;
+  bool _checking = false;
+
+  /// Camera chỉ có trên điện thoại, macOS và trình duyệt.
+  static bool get _cameraSupported =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
+  MobileScannerController? _scanner;
+  bool _scanPaused = false;
 
   AppState get _app => widget.appState;
 
   @override
+  void initState() {
+    super.initState();
+    if (_cameraSupported) {
+      _scanner = MobileScannerController(
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        formats: const [BarcodeFormat.qrCode],
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    _scanner?.dispose();
     _codeCtrl.dispose();
     super.dispose();
+  }
+
+  /// Camera đọc được mã: dừng quét, điền mã và kiểm tra luôn.
+  Future<void> _onDetect(BarcodeCapture capture) async {
+    if (_scanPaused || _checking) return;
+    final value = capture.barcodes
+        .map((b) => b.rawValue?.trim() ?? '')
+        .firstWhere((v) => v.isNotEmpty, orElse: () => '');
+    if (value.isEmpty) return;
+    setState(() => _scanPaused = true);
+    HapticFeedback.mediumImpact();
+    await _scanner?.stop();
+    _codeCtrl.text = value;
+    await _verify();
+  }
+
+  /// Quét vé khác.
+  Future<void> _scanAgain() async {
+    setState(() {
+      _scanPaused = false;
+      _found = null;
+      _error = null;
+      _codeCtrl.clear();
+    });
+    await _scanner?.start();
   }
 
   Map<String, dynamic>? _lookup(String code) {
@@ -54,12 +107,127 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
     return null;
   }
 
-  void _verify() {
-    final b = _lookup(_codeCtrl.text);
+  Future<void> _verify() async {
+    final code = _codeCtrl.text.trim();
+    if (code.isEmpty) {
+      setState(() => _error = 'Hãy quét mã QR hoặc nhập mã vé.');
+      return;
+    }
+    var b = _lookup(code);
+    if (b == null) {
+      // Vé vừa được đặt ở máy khác: tải lại danh sách vé của chủ sân rồi tìm lại
+      setState(() => _checking = true);
+      try {
+        await _app.refreshOwnerDashboard();
+      } catch (e) {
+        debugPrint('[S22] $e');
+      }
+      if (!mounted) return;
+      b = _lookup(code);
+    }
     setState(() {
+      _checking = false;
       _found = b;
-      _error = b == null ? 'Không tìm thấy vé với mã "${_codeCtrl.text.trim()}".' : _invalidReason(b);
+      _error = b == null ? 'Không tìm thấy vé với mã "$code".' : _invalidReason(b);
     });
+  }
+
+  Widget _cameraBox(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final scanner = _scanner;
+
+    Widget placeholder(IconData icon, String text) => Container(
+          color: cs.inverseSurface,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: cs.inversePrimary, size: 56),
+              const SizedBox(height: 10),
+              Text(text,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(color: cs.onInverseSurface)),
+            ],
+          ),
+        );
+
+    final Widget content;
+    if (scanner == null) {
+      content = placeholder(Icons.qr_code_scanner, 'Máy này không có camera. Nhập mã vé bên dưới.');
+    } else if (_scanPaused) {
+      content = placeholder(Icons.check_circle_outline, 'Đã đọc mã. Bấm "Quét vé khác" để quét tiếp.');
+    } else {
+      content = Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(
+            controller: scanner,
+            onDetect: _onDetect,
+            errorBuilder: (context, error) => placeholder(
+              Icons.no_photography_outlined,
+              error.errorCode == MobileScannerErrorCode.permissionDenied
+                  ? 'Chưa cấp quyền camera. Mở Cài đặt để cho phép, hoặc nhập mã bên dưới.'
+                  : 'Không mở được camera. Nhập mã vé bên dưới.',
+            ),
+          ),
+          // Khung ngắm
+          Center(
+            child: FractionallySizedBox(
+              widthFactor: 0.7,
+              heightFactor: 0.7,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Đèn flash',
+                  color: Colors.white,
+                  onPressed: () => scanner.toggleTorch(),
+                  icon: ValueListenableBuilder<MobileScannerState>(
+                    valueListenable: scanner,
+                    builder: (_, state, __) =>
+                        Icon(state.torchState == TorchState.on ? Icons.flash_on : Icons.flash_off),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Đổi camera',
+                  color: Colors.white,
+                  onPressed: () => scanner.switchCamera(),
+                  icon: const Icon(Icons.cameraswitch_outlined),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 300),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: cs.primary, width: 3),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: content,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmCheckIn() async {
@@ -104,35 +272,14 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
           Text('Check-in khách',
               style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
-          // Khung quét (mô phỏng camera)
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 240),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: cs.inverseSurface,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.primary, width: 3),
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.qr_code_scanner, color: cs.inversePrimary, size: 64),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Đưa mã QR trên vé của khách vào khung',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(color: cs.onInverseSurface),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+          _cameraBox(context),
+          if (_scanner != null && !_scanPaused)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('Đưa mã QR trên vé của khách vào khung',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
             ),
-          ),
           const SizedBox(height: 20),
           TextField(
             controller: _codeCtrl,
@@ -149,6 +296,7 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
             },
             decoration: InputDecoration(
               labelText: 'Mã QR hoặc mã vé',
+              hintText: 'VD: QR-BK-202610',
               prefixIcon: const Icon(Icons.confirmation_number_outlined),
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
@@ -160,7 +308,9 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
           ),
           const SizedBox(height: 12),
 
-          if (_error != null)
+          if (_checking)
+            const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()))
+          else if (_error != null)
             NoteBox(_error!, tone: NoteTone.error)
           else if (b != null)
             SurfaceCard(
@@ -203,8 +353,16 @@ class _S22QrCheckInScannerScreenState extends State<S22QrCheckInScannerScreen> {
               label: 'Kiểm tra mã',
               icon: Icons.search,
               tonal: true,
-              onPressed: _verify,
+              onPressed: _checking ? null : _verify,
             ),
+          if (_scanner != null && _scanPaused) ...[
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _scanAgain,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Quét vé khác'),
+            ),
+          ],
         ],
       ),
     );

@@ -55,8 +55,7 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
     }
     if (!mounted) return;
     setState(() => _loading = false);
-    widget.appState.resetTo(widget.appState.homeScreen);
-    widget.appState.syncFromBackend();
+    widget.appState.enterAfterLogin();
   }
 
   Future<void> _handleGoogleLogin() async {
@@ -78,8 +77,7 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
           const SnackBar(content: Text('Tạo tài khoản thành công, Ví được tặng 200.000đ.')),
         );
       }
-      widget.appState.resetTo(widget.appState.homeScreen);
-      widget.appState.syncFromBackend();
+      widget.appState.enterAfterLogin();
     } catch (e) {
       // Đăng nhập Google thành công nhưng máy chủ từ chối: thoát Google để lần sau chọn lại tài khoản
       GoogleAuthService.signOut();

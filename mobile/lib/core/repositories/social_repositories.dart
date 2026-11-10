@@ -133,7 +133,7 @@ class AiRepository {
         if (sessionId != null) 'sessionId': sessionId,
         if (lat != null && lng != null) 'lat': lat,
         if (lat != null && lng != null) 'lng': lng,
-      }));
+      }, const Duration(seconds: 60))); // Gemini có thể mất vài chục giây (gọi nhiều công cụ)
 
   /// Phiên đang mở: `{sessionId, messages: [{role, content, cards, quickChips}], quota}`.
   Future<Json> currentSession() async => asJson(await _api.get('/ai/sessions/current'));

@@ -226,6 +226,8 @@ class S08VenueDetailScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // Ảnh chủ sân tải lên (nếu có từ 2 ảnh): dải ảnh nhỏ, chạm để xem lớn
+                VenueGallery(venue: v),
 
                 // Địa chỉ + chỉ đường
                 Row(

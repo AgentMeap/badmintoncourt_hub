@@ -359,7 +359,7 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
           _line(theme, Icons.schedule,
               '${UiDate.full(post['playDate']?.toString() ?? '')} • ${post['startTime']} - ${post['endTime']}'),
           _line(theme, Icons.payments_outlined,
-              '${UiFmt.vnd(UiFmt.toNum(post['feePerPlayer'], 0))}/người (sân + cầu)'),
+              MatchFee.text(post, suffix: '/người (sân + cầu)')),
           _line(theme, Icons.person_outline, 'Chủ kèo: ${isHost ? 'Bạn' : post['hostName']}'),
           Padding(
             padding: const EdgeInsets.only(left: 22),

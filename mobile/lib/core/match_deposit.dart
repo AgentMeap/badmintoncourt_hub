@@ -5,8 +5,54 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 /// Cọc kèo giao lưu qua ví (dùng chung cho S15, S16, S30).
 /// Chính sách giống backend (MatchDepositService): trừ ví khi xin, giữ hộ đến khi kèo kết thúc rồi trả chủ kèo.
+/// Phí kèo: kèo có thể đặt giá riêng cho nam và nữ (feeMale / feeFemale), không thì dùng feePerPlayer.
+class MatchFee {
+  MatchFee._();
+
+  static double? _money(Object? v) {
+    final n = UiFmt.toNum(v, -1).toDouble();
+    return n >= 0 ? n : null;
+  }
+
+  static double? male(Map post) => _money(post['feeMale']);
+  static double? female(Map post) => _money(post['feeFemale']);
+  static double common(Map post) => UiFmt.toNum(post['feePerPlayer'], 0).toDouble();
+
+  /// Kèo có giá nam và nữ khác nhau.
+  static bool isSplit(Map post) {
+    final m = male(post), f = female(post);
+    return m != null && f != null && m != f;
+  }
+
+  /// Phí của một người theo giới tính (MALE / FEMALE). Chưa rõ giới tính: mức chung.
+  static double forGender(Map post, String? gender) {
+    if (gender == 'FEMALE' && female(post) != null) return female(post)!;
+    if (gender == 'MALE' && male(post) != null) return male(post)!;
+    return common(post);
+  }
+
+  /// "Nam 70.000đ · Nữ 55.000đ/người" hoặc "65.000đ/người".
+  static String text(Map post, {String suffix = '/người'}) => isSplit(post)
+      ? 'Nam ${UiFmt.vnd(male(post)!)} · Nữ ${UiFmt.vnd(female(post)!)}$suffix'
+      : '${UiFmt.vnd(common(post))}$suffix';
+}
+
+/// Giới tính hiển thị.
+class Gender {
+  Gender._();
+  static const codes = ['MALE', 'FEMALE'];
+  static String label(String? code) => switch (code) {
+        'MALE' => 'Nam',
+        'FEMALE' => 'Nữ',
+        _ => 'Chưa rõ',
+      };
+}
+
 class MatchDeposit {
   MatchDeposit._();
+
+  /// Giới tính của người đang dùng app (AppState cập nhật), để tính cọc theo giá nam / nữ.
+  static String? viewerGender;
 
   static const policyText = 'Hoàn cọc: bị từ chối / tự hủy đơn khi chưa duyệt / chủ kèo hủy kèo → hoàn đủ. '
       'Đã được duyệt mà tự rời kèo: còn từ 24 giờ → hoàn đủ; 2–24 giờ → hoàn 50%; dưới 2 giờ → mất cọc.';
@@ -19,7 +65,11 @@ class MatchDeposit {
 
   static int percentOf(Map post) => UiFmt.toNum(post['depositPercent'], 0).toInt();
 
-  static double amountOf(Map post) {
+  /// Số cọc của người đang dùng app ([gender] mặc định là [viewerGender]).
+  static double amountOf(Map post, [String? gender]) {
+    if (MatchFee.isSplit(post)) {
+      return amountFor(MatchFee.forGender(post, gender ?? viewerGender), percentOf(post));
+    }
     final saved = UiFmt.toNum(post['depositAmount'], -1).toDouble();
     if (saved >= 0) return saved;
     return amountFor(UiFmt.toNum(post['feePerPlayer'], 0).toDouble(), percentOf(post));
@@ -27,6 +77,12 @@ class MatchDeposit {
 
   /// "Cọc 50% · 33.000đ" (null nếu kèo không cọc).
   static String? label(Map post) {
+    if (percentOf(post) <= 0) return null;
+    if (MatchFee.isSplit(post)) {
+      final m = amountOf(post, 'MALE'), f = amountOf(post, 'FEMALE');
+      if (m <= 0 && f <= 0) return null;
+      return 'Cọc ${percentOf(post)}% · Nam ${UiFmt.vnd(m)} / Nữ ${UiFmt.vnd(f)}';
+    }
     final amount = amountOf(post);
     if (amount <= 0) return null;
     return 'Cọc ${percentOf(post)}% · ${UiFmt.vnd(amount)}';

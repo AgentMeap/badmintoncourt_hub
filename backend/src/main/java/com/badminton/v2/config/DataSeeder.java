@@ -398,7 +398,9 @@ public class DataSeeder implements CommandLineRunner {
         m1.setRequiredSkill("TB_YEU");
         m1.setMaxPlayers(6);
         m1.setCurrentPlayers(4);
-        m1.setFeePerPlayer(65000.0);
+        m1.setFeePerPlayer(70000.0);
+        m1.setFeeMale(70000.0);
+        m1.setFeeFemale(55000.0);
         m1.setVideoUrl("https://www.youtube.com/watch?v=tAS7rOKtpgQ");
         m1.setStatus("OPEN");
         m1.setCreatedAt(now);

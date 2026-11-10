@@ -685,6 +685,82 @@ class SkillLevel {
   static String label(String? code) => _labels[code] ?? (code ?? '-');
 }
 
+/// Dải ảnh của cơ sở (ảnh chủ sân tải lên, cần từ 2 ảnh). Chạm một ảnh để xem toàn màn hình, vuốt qua lại.
+class VenueGallery extends StatelessWidget {
+  final Map<String, dynamic> venue;
+  const VenueGallery({super.key, required this.venue});
+
+  static List<String> urlsOf(Map venue) {
+    final raw = venue['imageUrls'];
+    final list = raw is List ? raw.map((e) => e.toString()).toList() : <String>[];
+    return list.map(VenueCoverImage.resolveUrl).whereType<String>().toList();
+  }
+
+  void _open(BuildContext context, List<String> urls, int index) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (ctx) => Stack(
+        children: [
+          PageView.builder(
+            controller: PageController(initialPage: index),
+            itemCount: urls.length,
+            itemBuilder: (_, i) => InteractiveViewer(
+              child: Center(child: Image.network(urls[i], fit: BoxFit.contain)),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: SafeArea(
+              child: IconButton(
+                tooltip: 'Đóng',
+                color: Colors.white,
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = urlsOf(venue);
+    if (urls.length < 2) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        height: 72,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: urls.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, i) => InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _open(context, urls, i),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                urls[i],
+                width: 96,
+                height: 72,
+                fit: BoxFit.cover,
+                cacheWidth: 300,
+                semanticLabel: 'Ảnh cơ sở ${i + 1}',
+                errorBuilder: (_, __, ___) => SizedBox(width: 96, height: 72, child: ColoredBox(color: cs.surfaceContainerHighest)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Ảnh bìa cơ sở: luôn có nền gradient theo sắc độ riêng của cơ sở làm placeholder,
 /// ảnh mạng hiện dần khi tải xong (tắt hiệu ứng nếu hệ thống bật giảm chuyển động),
 /// giải mã đúng kích thước hiển thị (cacheWidth) để tiết kiệm bộ nhớ, lỗi tải thì

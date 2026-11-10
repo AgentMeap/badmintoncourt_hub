@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Quét mã QR trên vé để check-in khách.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Cho phép chọn video từ thư viện để gắn vào hồ sơ hoặc kèo giao lưu.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

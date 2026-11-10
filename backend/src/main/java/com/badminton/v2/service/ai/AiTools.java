@@ -339,6 +339,10 @@ public class AiTools {
         match.put("hostName", m.getHostName());
         match.put("slotsLeft", m.getMaxPlayers() - m.getCurrentPlayers());
         match.put("feePerPlayer", m.getFeePerPlayer());
+        if (MatchDepositService.splitFee(m)) {
+            match.put("feeMale", m.getFeeMale());
+            match.put("feeFemale", m.getFeeFemale());
+        }
         match.put("status", m.getStatus());
         match.put("depositPercent", m.getDepositPercent() == null ? 0 : m.getDepositPercent());
         match.put("depositAmount", MatchDepositService.depositOf(m));

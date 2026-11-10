@@ -112,6 +112,7 @@ public class MatchmakingController {
             m.put("userId", mp.getUserId());
             m.put("userName", mp.getUserName());
             m.put("userSkill", mp.getUserSkill());
+            if (mp.getUserGender() != null) m.put("userGender", mp.getUserGender());
             m.put("status", mp.getStatus());
             m.put("joinedAt", mp.getJoinedAt());
             if (mp.getRejectReason() != null) m.put("rejectReason", mp.getRejectReason());
@@ -133,6 +134,13 @@ public class MatchmakingController {
         item.put("post", post);
         item.put("participants", participants);
         item.put("pendingCount", pending);
+        // Phí và cọc của người đang xem (kèo giá nam / nữ khác nhau)
+        if (viewer != null && !viewerIsHost) {
+            userRepository.findById(viewer).ifPresent(u -> {
+                item.put("myFee", MatchDepositService.feeFor(p, u.getGender()));
+                item.put("myDeposit", MatchDepositService.depositFor(p, u.getGender()));
+            });
+        }
         item.put("isHost", viewerIsHost);
         item.put("myStatus", viewerIsHost ? "HOST" : myStatus);
         boolean chatAllowed = viewerIsHost || "APPROVED".equals(myStatus);
@@ -226,6 +234,19 @@ public class MatchmakingController {
         post.setMaxPlayers(Integer.parseInt(String.valueOf(body.getOrDefault("maxPlayers", 6))));
         post.setCurrentPlayers(Integer.parseInt(String.valueOf(body.getOrDefault("currentPlayers", 3))));
         post.setFeePerPlayer(Double.parseDouble(String.valueOf(body.getOrDefault("feePerPlayer", 65000))));
+        // Giá riêng cho nam / nữ (VD nam 70k, nữ 55k). Chỉ nhập một mức thì dùng cho cả hai.
+        Double feeMale = moneyOrNull(body.get("feeMale"));
+        Double feeFemale = moneyOrNull(body.get("feeFemale"));
+        if (feeMale != null || feeFemale != null) {
+            if (feeMale == null) feeMale = feeFemale;
+            if (feeFemale == null) feeFemale = feeMale;
+            if (feeMale < 0 || feeFemale < 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Phí cho nam / nữ không hợp lệ."));
+            }
+            post.setFeeMale(feeMale);
+            post.setFeeFemale(feeFemale);
+            post.setFeePerPlayer(Math.max(feeMale, feeFemale));
+        }
         if (body.get("videoUrl") != null) {
             post.setVideoUrl(String.valueOf(body.get("videoUrl")));
         }
@@ -266,8 +287,12 @@ public class MatchmakingController {
             return ResponseEntity.badRequest().body(Map.of("error", "Kèo giao lưu này đã đủ người!"));
         }
 
+        if (MatchDepositService.splitFee(post) && user.getGender() == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Kèo này có giá riêng cho nam và nữ. Vui lòng cập nhật giới tính trong hồ sơ trước khi xin tham gia."));
+        }
         if (!depositService.canAfford(user, post)) {
-            double need = MatchDepositService.depositOf(post);
+            double need = MatchDepositService.depositFor(post, user.getGender());
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("error", "Kèo yêu cầu cọc " + MatchDepositService.format(need) + " qua ví, số dư của bạn chỉ còn "
                     + MatchDepositService.format(user.getWalletBalance()) + ". Vui lòng nạp thêm.");
@@ -282,6 +307,7 @@ public class MatchmakingController {
         mp.setUserName(user.getFullName());
         mp.setUserSkill(user.getSkillLevel());
         mp.setUserPhone(user.getPhone());
+        mp.setUserGender(user.getGender());
         mp.setStatus("PENDING");
         mp.setJoinedAt(LocalDateTime.now().format(FMT));
         mp = matchParticipantRepository.save(mp);
@@ -728,5 +754,15 @@ public class MatchmakingController {
         return userRepository.findById(hostId)
                 .<ResponseEntity<?>>map(h -> ResponseEntity.ok(reputationService.profile(h)))
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Không tìm thấy chủ kèo.")));
+    }
+
+    /** Số tiền trong body (null nếu không gửi / để trống). */
+    private static Double moneyOrNull(Object v) {
+        if (v == null || String.valueOf(v).isBlank()) return null;
+        try {
+            return Double.parseDouble(String.valueOf(v));
+        } catch (NumberFormatException e) {
+            return -1.0;
+        }
     }
 }

@@ -43,6 +43,10 @@ public class User {
     /** Kèo bị hủy ÷ kèo đã xong hoặc bị hủy (chỉ tính kèo có người xin). */
     private Double hostCancelRate;
     private Integer hostCompletedCount;
+    /** MALE / FEMALE (null = chưa cập nhật). */
+    private String gender;
+    /** false = tài khoản mới, cần hoàn thiện hồ sơ (giới tính, trình độ). null = tài khoản cũ, coi như đã xong. */
+    private Boolean profileCompleted;
 
     public User() {}
 
@@ -101,4 +105,10 @@ public class User {
     public void setHostCancelRate(Double hostCancelRate) { this.hostCancelRate = hostCancelRate; }
     public Integer getHostCompletedCount() { return hostCompletedCount; }
     public void setHostCompletedCount(Integer hostCompletedCount) { this.hostCompletedCount = hostCompletedCount; }
+
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+    public Boolean getProfileCompleted() { return profileCompleted; }
+    public void setProfileCompleted(Boolean profileCompleted) { this.profileCompleted = profileCompleted; }
+    public boolean isProfileComplete() { return !Boolean.FALSE.equals(profileCompleted); }
 }

@@ -285,6 +285,29 @@ class _S25AdminModerationScreenState extends State<S25AdminModerationScreen> {
     _app.refreshAdminDashboard().catchError((Object e) => debugPrint('[S25] $e'));
   }
 
+  /// Admin tạo tài khoản chủ sân, xong thì lọc danh sách về Chủ sân.
+  Future<void> _createOwner() async {
+    final created = await showModalBottomSheet<Json>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => const _CreateOwnerSheet(),
+    );
+    if (created == null || !mounted) return;
+    setState(() {
+      _roleFilter = 'COURT_OWNER';
+      _searchCtrl.clear();
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text('Đã tạo tài khoản chủ sân ${created['email']}. Gửi email và mật khẩu cho chủ sân để đăng nhập.'),
+      ));
+    _app.refreshAdminDashboard().catchError((Object e) => debugPrint('[S25] $e'));
+  }
+
   List<Widget> _userTab(ThemeData theme) {
     final cs = theme.colorScheme;
     final q = _searchCtrl.text.trim().toLowerCase();
@@ -296,6 +319,15 @@ class _S25AdminModerationScreenState extends State<S25AdminModerationScreen> {
     }).toList();
 
     return [
+      Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.tonalIcon(
+          onPressed: _createOwner,
+          icon: const Icon(Icons.person_add_alt_1_outlined),
+          label: const Text('Tạo tài khoản chủ sân'),
+        ),
+      ),
+      const SizedBox(height: 10),
       TextField(
         controller: _searchCtrl,
         decoration: InputDecoration(
@@ -425,6 +457,124 @@ class _S25AdminModerationScreenState extends State<S25AdminModerationScreen> {
             ...(_tab == 0 ? _venueTab(theme) : _userTab(theme)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Form tạo tài khoản chủ sân (Admin). Trả về tài khoản đã tạo qua Navigator.pop.
+class _CreateOwnerSheet extends StatefulWidget {
+  const _CreateOwnerSheet();
+
+  @override
+  State<_CreateOwnerSheet> createState() => _CreateOwnerSheetState();
+}
+
+class _CreateOwnerSheetState extends State<_CreateOwnerSheet> {
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _obscure = true;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  String? _validate() {
+    if (_nameCtrl.text.trim().length < 2) return 'Vui lòng nhập họ tên chủ sân.';
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(_emailCtrl.text.trim())) return 'Email không hợp lệ.';
+    if (!RegExp(r'^0\d{9}$').hasMatch(_phoneCtrl.text.trim())) return 'Số điện thoại cần 10 chữ số, bắt đầu bằng 0.';
+    if (_passCtrl.text.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự.';
+    return null;
+  }
+
+  Future<void> _submit() async {
+    final error = _validate();
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final res = await Repos.admin.createCourtOwner({
+        'fullName': _nameCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'phone': _phoneCtrl.text.trim(),
+        'password': _passCtrl.text,
+      });
+      if (mounted) Navigator.of(context).pop(res);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showApiError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    InputDecoration deco(String label, IconData icon, {String? helper}) => InputDecoration(
+          labelText: label,
+          helperText: helper,
+          prefixIcon: Icon(icon),
+          border: const OutlineInputBorder(),
+        );
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Tạo tài khoản chủ sân', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text('Tài khoản dùng được ngay, không cần xác thực email. Chủ sân nên đổi mật khẩu sau lần đăng nhập đầu.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _nameCtrl,
+            textCapitalization: TextCapitalization.words,
+            decoration: deco('Họ và tên', Icons.badge_outlined),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: deco('Email đăng nhập', Icons.email_outlined),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: deco('Số điện thoại', Icons.phone_outlined),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passCtrl,
+            obscureText: _obscure,
+            decoration: deco('Mật khẩu tạm', Icons.lock_outline, helper: 'Ít nhất 6 ký tự').copyWith(
+              suffixIcon: IconButton(
+                tooltip: _obscure ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
+                onPressed: () => setState(() => _obscure = !_obscure),
+                icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          PrimaryButton(
+            label: 'Tạo tài khoản',
+            icon: Icons.person_add_alt_1_outlined,
+            loading: _saving,
+            onPressed: _saving ? null : _submit,
+          ),
+        ],
       ),
     );
   }

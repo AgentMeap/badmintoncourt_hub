@@ -64,6 +64,24 @@ public class MatchDepositService {
         return p.getDepositAmount() == null ? 0 : p.getDepositAmount();
     }
 
+    /** Phí của một người theo giới tính (kèo có giá nam / nữ riêng). Chưa rõ giới tính: mức chung (cao hơn). */
+    public static double feeFor(MatchPost p, String gender) {
+        if ("FEMALE".equals(gender) && p.getFeeFemale() != null) return p.getFeeFemale();
+        if ("MALE".equals(gender) && p.getFeeMale() != null) return p.getFeeMale();
+        return p.getFeePerPlayer();
+    }
+
+    /** Kèo có giá nam và nữ khác nhau. */
+    public static boolean splitFee(MatchPost p) {
+        return p.getFeeMale() != null && p.getFeeFemale() != null && !p.getFeeMale().equals(p.getFeeFemale());
+    }
+
+    /** Số cọc của một người theo giới tính. */
+    public static double depositFor(MatchPost p, String gender) {
+        int percent = p.getDepositPercent() == null ? 0 : p.getDepositPercent();
+        return splitFee(p) ? depositFor(feeFor(p, gender), percent) : depositOf(p);
+    }
+
     private static double amountOf(MatchParticipant mp) {
         return mp.getDepositAmount() == null ? 0 : mp.getDepositAmount();
     }
@@ -87,13 +105,13 @@ public class MatchDepositService {
 
     /** Ví có đủ cọc không (dùng trước khi tạo đơn). */
     public boolean canAfford(User user, MatchPost post) {
-        return user.getWalletBalance() + 1e-6 >= depositOf(post);
+        return user.getWalletBalance() + 1e-6 >= depositFor(post, user.getGender());
     }
 
     /** Trừ cọc khi xin tham gia. Kèo không cọc thì chỉ đánh dấu NONE. */
     @Transactional
     public void hold(MatchParticipant mp, MatchPost post) {
-        double amount = depositOf(post);
+        double amount = depositFor(post, mp.getUserGender());
         mp.setRefundedAmount(0.0);
         if (amount <= 0) {
             mp.setDepositAmount(0.0);

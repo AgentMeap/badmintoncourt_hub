@@ -18,6 +18,9 @@ public class Venue {
     @Column(length = 1000)
     private String description;
     private String imageUrl;
+    /** Ảnh chủ sân tải lên (tối đa 5), cách nhau bởi xuống dòng; ảnh đầu cũng là imageUrl (ảnh bìa). */
+    @Column(length = 2000)
+    private String galleryUrls;
     private String openTime;
     private String closeTime;
     private String status; // PENDING, APPROVED, REJECTED, SUSPENDED
@@ -86,4 +89,21 @@ public class Venue {
     public void setPeakPricePerHour(double peakPricePerHour) { this.peakPricePerHour = peakPricePerHour; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
+    public void setGalleryUrls(String galleryUrls) { this.galleryUrls = galleryUrls; }
+
+    /** Danh sách ảnh để app hiển thị (ảnh bìa đứng đầu). */
+    public java.util.List<String> getImageUrls() {
+        java.util.List<String> urls = new java.util.ArrayList<>();
+        if (galleryUrls != null && !galleryUrls.isBlank()) {
+            for (String u : galleryUrls.split("\n")) if (!u.isBlank()) urls.add(u.trim());
+        }
+        if (urls.isEmpty() && imageUrl != null && !imageUrl.isBlank()) urls.add(imageUrl);
+        return urls;
+    }
+
+    /** Ảnh do chủ sân tải lên (không bị thay bằng ảnh trong thư mục venue-images). */
+    public boolean hasUploadedImages() {
+        return imageUrl != null && imageUrl.startsWith("/uploads/");
+    }
 }

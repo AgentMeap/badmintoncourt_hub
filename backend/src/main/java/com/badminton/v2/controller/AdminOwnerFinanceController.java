@@ -8,6 +8,7 @@ import com.badminton.v2.service.BookingRules;
 import com.badminton.v2.service.EmailOtpService;
 import com.badminton.v2.service.NotificationService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +28,7 @@ import java.util.*;
  *   <li>GET   /api/admin/dashboard                         tổng quan nền tảng (S24)</li>
  *   <li>PATCH /api/admin/venues/{venueId}/status           duyệt / từ chối / tạm ngưng cơ sở (S25)</li>
  *   <li>PATCH /api/admin/users/{userId}/toggle-active      khóa / mở khóa tài khoản (S25)</li>
+ *   <li>POST  /api/admin/users                             Admin tạo tài khoản chủ sân (S25)</li>
  *   <li>PATCH /api/admin/payout-requests/{id}/status       xác nhận chuyển khoản / từ chối giải ngân (S26)</li>
  * </ul>
  */
@@ -57,6 +59,7 @@ public class AdminOwnerFinanceController {
     private final EmailOtpService emailOtpService;
     private final NotificationService notificationService;
     private final MatchParticipantRepository matchParticipantRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public AdminOwnerFinanceController(VenueRepository venueRepository,
                                        CourtRepository courtRepository,
@@ -66,7 +69,8 @@ public class AdminOwnerFinanceController {
                                        UserRepository userRepository,
                                        EmailOtpService emailOtpService,
                                        NotificationService notificationService,
-                                       MatchParticipantRepository matchParticipantRepository) {
+                                       MatchParticipantRepository matchParticipantRepository,
+                                       PasswordEncoder passwordEncoder) {
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.bookingRepository = bookingRepository;
@@ -76,6 +80,7 @@ public class AdminOwnerFinanceController {
         this.emailOtpService = emailOtpService;
         this.notificationService = notificationService;
         this.matchParticipantRepository = matchParticipantRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     // ===================================================================== Chủ sân
@@ -467,6 +472,49 @@ public class AdminOwnerFinanceController {
     }
 
     // S25: khóa / mở khóa tài khoản (không khóa được tài khoản Admin, kể cả chính mình)
+    /**
+     * Admin tạo tài khoản chủ sân. Body: {fullName, email, phone, password}.
+     * Tài khoản đã xác thực, đăng nhập được ngay bằng email + mật khẩu Admin đặt (chủ sân nên đổi sau).
+     */
+    @PostMapping("/admin/users")
+    @Transactional
+    public ResponseEntity<?> createCourtOwner(@RequestBody Map<String, Object> body) {
+        String fullName = String.valueOf(body.getOrDefault("fullName", "")).trim();
+        String email = String.valueOf(body.getOrDefault("email", "")).trim().toLowerCase();
+        String phone = String.valueOf(body.getOrDefault("phone", "")).trim();
+        String password = String.valueOf(body.getOrDefault("password", ""));
+        String error = null;
+        if (fullName.length() < 2) {
+            error = "Vui lòng nhập họ tên chủ sân.";
+        } else if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            error = "Email không hợp lệ.";
+        } else if (!phone.matches("^0\\d{9}$")) {
+            error = "Số điện thoại cần 10 chữ số, bắt đầu bằng 0.";
+        } else if (password.length() < 6) {
+            error = "Mật khẩu cần ít nhất 6 ký tự.";
+        } else if (userRepository.findByEmailIgnoreCase(email).isPresent()) {
+            error = "Email này đã có tài khoản.";
+        }
+        if (error != null) return ResponseEntity.badRequest().body(Map.of("error", error));
+
+        User owner = new User(fullName, email, phone, passwordEncoder.encode(password), "COURT_OWNER", "TB_YEU",
+                0.0, true, true, LocalDateTime.now().format(FMT));
+        owner.setProfileCompleted(true);
+        owner = userRepository.save(owner);
+        notificationService.notifyUser(owner.getId(), "Chào mừng chủ sân mới!",
+                "Quản trị viên đã tạo tài khoản cho bạn. Hãy đổi mật khẩu trong Hồ sơ và đăng ký cơ sở ở tab Cơ sở.",
+                "SYSTEM", "S20", owner.getId());
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("id", owner.getId());
+        res.put("fullName", owner.getFullName());
+        res.put("email", owner.getEmail());
+        res.put("phone", owner.getPhone());
+        res.put("role", owner.getRole());
+        res.put("active", owner.isActive());
+        return ResponseEntity.ok(res);
+    }
+
     @PatchMapping("/admin/users/{userId}/toggle-active")
     @Transactional
     public ResponseEntity<?> toggleUserActive(@PathVariable Long userId) {

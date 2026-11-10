@@ -34,6 +34,9 @@ public class MatchPost {
     private Integer depositPercent;
     /** Số tiền cọc mỗi người (đã làm tròn lên 1.000đ). */
     private Double depositAmount;
+    /** Phí cho nam / nữ (null = dùng chung feePerPlayer). feePerPlayer = mức cao hơn để sắp xếp, hiển thị cũ. */
+    private Double feeMale;
+    private Double feeFemale;
 
     public MatchPost() {}
 
@@ -83,4 +86,9 @@ public class MatchPost {
     public void setDepositPercent(Integer depositPercent) { this.depositPercent = depositPercent; }
     public Double getDepositAmount() { return depositAmount; }
     public void setDepositAmount(Double depositAmount) { this.depositAmount = depositAmount; }
+
+    public Double getFeeMale() { return feeMale; }
+    public void setFeeMale(Double feeMale) { this.feeMale = feeMale; }
+    public Double getFeeFemale() { return feeFemale; }
+    public void setFeeFemale(Double feeFemale) { this.feeFemale = feeFemale; }
 }

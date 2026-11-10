@@ -246,7 +246,7 @@ class _MatchCard extends StatelessWidget {
                 ),
                 Text(
                   '${SkillLevel.label(match['requiredSkill']?.toString())} • còn ${match['slotsLeft']} chỗ • '
-                  '${UiFmt.vnd(UiFmt.toNum(match['feePerPlayer'], 0))}/người',
+                  '${MatchFee.text(match)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(color: cs.tertiary, fontWeight: FontWeight.w700),

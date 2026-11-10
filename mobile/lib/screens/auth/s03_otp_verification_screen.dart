@@ -173,8 +173,7 @@ class _S03OtpVerificationScreenState extends State<S03OtpVerificationScreen> {
       context: context,
     );
     // Xác thực xong: bắt đầu phiên mới, Back không quay lại màn OTP / đăng ký
-    app.resetTo(app.homeScreen);
-    app.syncFromBackend();
+    app.enterAfterLogin();
   }
 
   @override

@@ -164,9 +164,21 @@ public class VenueController {
                 peakPrice,
                 LocalDateTime.now().format(FMT)
         );
+        // Ảnh chủ sân tải lên (POST /api/media/images), tối đa 5, ảnh đầu là ảnh bìa
+        List<String> uploaded = new ArrayList<>();
+        if (body.get("imageUrls") instanceof List<?> list) {
+            for (Object o : list) {
+                String u = String.valueOf(o).trim();
+                if (u.startsWith("/uploads/venues/") && !u.contains("..") && uploaded.size() < 5) uploaded.add(u);
+            }
+        }
+        if (!uploaded.isEmpty()) {
+            venue.setImageUrl(uploaded.get(0));
+            venue.setGalleryUrls(String.join("\n", uploaded));
+        }
         venue = venueRepository.save(venue);
-        // Ảnh lấy từ thư mục backend/venue-images (nếu có), cần id nên gán sau khi lưu
-        if (venueImageService.assign(venue)) venue = venueRepository.save(venue);
+        // Không có ảnh tải lên: lấy từ thư mục backend/venue-images (nếu có), cần id nên gán sau khi lưu
+        if (uploaded.isEmpty() && venueImageService.assign(venue)) venue = venueRepository.save(venue);
 
         for (int i = 1; i <= totalCourts; i++) {
             courtRepository.save(new Court(venue.getId(), "Sân " + i, i == 1 ? "VIP" : "STANDARD", true));
@@ -197,6 +209,7 @@ public class VenueController {
         m.put("distanceKm", distKm);
         m.put("description", v.getDescription());
         m.put("imageUrl", v.getImageUrl());
+        m.put("imageUrls", v.getImageUrls());
         m.put("openTime", v.getOpenTime());
         m.put("closeTime", v.getCloseTime());
         m.put("status", v.getStatus());

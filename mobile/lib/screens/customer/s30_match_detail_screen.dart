@@ -499,6 +499,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                         style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
                     Text(
                       [
+                        if (p['userGender'] != null) Gender.label(p['userGender']?.toString()),
                         'Trình độ: ${SkillLevel.label(p['userSkill']?.toString())}',
                         if (p['userPhone'] != null) '${p['userPhone']}',
                         if (extra != null) extra,
@@ -1031,7 +1032,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                         _line(theme, Icons.schedule,
                             '${UiDate.full(post['playDate']?.toString() ?? '')} • ${post['startTime']} - ${post['endTime']}'),
                         _line(theme, Icons.payments_outlined,
-                            '${UiFmt.vnd(UiFmt.toNum(post['feePerPlayer'], 0))}/người (sân + cầu)'),
+                            MatchFee.text(post, suffix: '/người (sân + cầu)')),
                         if (MatchDeposit.label(post) != null)
                           _line(theme, Icons.account_balance_wallet_outlined,
                               '${MatchDeposit.label(post)} qua ví khi xin vào, phần còn lại trả tại sân'),
@@ -1150,7 +1151,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                     ? 'Kèo đã đủ người'
                     : MatchDeposit.amountOf(post) > 0
                         ? 'Cọc ${UiFmt.vnd(MatchDeposit.amountOf(post))} qua ví'
-                        : '${UiFmt.vnd(UiFmt.toNum(post['feePerPlayer'], 0))}/người',
+                        : '${UiFmt.vnd(MatchFee.forGender(post, _app.gender))}/người',
               },
               style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),

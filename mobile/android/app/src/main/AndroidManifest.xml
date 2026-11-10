@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Tải ảnh sân, bản đồ, video kèo và gọi backend (bản release bắt buộc phải có) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Chủ sân quét mã QR check-in (mobile_scanner) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- Nút micro ở Trợ lý AI (S17): chuyển giọng nói thành chữ bằng speech_to_text -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- Vị trí GPS: tính khoảng cách tới sân (S06, S07) và gợi ý sân gần ở Trợ lý AI -->

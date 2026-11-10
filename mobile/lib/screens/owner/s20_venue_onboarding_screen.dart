@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:badminton_v2_mobile/core/repositories/repositories.dart';
 import 'package:badminton_v2_mobile/core/app_state.dart';
+import 'package:badminton_v2_mobile/core/image_upload.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
@@ -29,6 +30,79 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
   int _openHour = 5;
   int _closeHour = 23;
   bool _loading = false;
+
+  /// Ảnh đã tải lên máy chủ (ảnh đầu là ảnh bìa).
+  final List<String> _images = [];
+  int _uploading = 0;
+
+  Future<void> _addImages() async {
+    final files = await ImageUploadService.pickImages(limit: ImageUploadService.maxImages - _images.length);
+    if (files.isEmpty || !mounted) return;
+    setState(() => _uploading += files.length);
+    for (final f in files) {
+      try {
+        final url = await ImageUploadService.upload(f);
+        if (!mounted) return;
+        setState(() => _images.add(url));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      } finally {
+        if (mounted) setState(() => _uploading--);
+      }
+    }
+  }
+
+  Widget _imageTile(int index, ColorScheme cs, ThemeData theme) {
+    final url = VenueCoverImage.resolveUrl(_images[index]) ?? '';
+    return SizedBox(
+      width: 120,
+      height: 90,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(url, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => ColoredBox(color: cs.surfaceContainerHighest)),
+          ),
+          if (index == 0)
+            Positioned(
+              left: 6,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(6)),
+                child: Text('Ảnh bìa', style: theme.textTheme.labelSmall?.copyWith(color: cs.onPrimary)),
+              ),
+            ),
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IconButton.filledTonal(
+              tooltip: 'Xóa ảnh',
+              visualDensity: VisualDensity.compact,
+              iconSize: 16,
+              onPressed: () => setState(() => _images.removeAt(index)),
+              icon: const Icon(Icons.close),
+            ),
+          ),
+          if (index > 0)
+            Positioned(
+              left: 2,
+              top: 2,
+              child: IconButton.filledTonal(
+                tooltip: 'Đặt làm ảnh bìa',
+                visualDensity: VisualDensity.compact,
+                iconSize: 16,
+                onPressed: () => setState(() => _images.insert(0, _images.removeAt(index))),
+                icon: const Icon(Icons.star_outline),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -56,6 +130,8 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
       error = 'Giá giờ vàng phải lớn hơn hoặc bằng giá thường.';
     } else if (_closeHour <= _openHour) {
       error = 'Giờ đóng cửa phải sau giờ mở cửa.';
+    } else if (_uploading > 0) {
+      error = 'Đang tải ảnh lên, vui lòng đợi một chút.';
     }
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
@@ -76,6 +152,8 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
       'basePricePerHour': base,
       'peakPricePerHour': peak,
       'status': 'PENDING',
+      if (_images.isNotEmpty) 'imageUrls': List<String>.from(_images),
+      if (_images.isNotEmpty) 'imageUrl': _images.first,
     };
 
     final Json saved;
@@ -263,6 +341,46 @@ class _S20VenueOnboardingScreenState extends State<S20VenueOnboardingScreen> {
                 children: [Expanded(child: base), const SizedBox(width: 10), Expanded(child: peak)],
               );
             },
+          ),
+          const SizedBox(height: 24),
+          const SectionHeader('Hình ảnh sân'),
+          Text('Tối đa ${ImageUploadService.maxImages} ảnh. Ảnh đầu tiên là ảnh bìa hiện trên Trang chủ và Bản đồ.',
+              style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (var i = 0; i < _images.length; i++) _imageTile(i, cs, theme),
+              for (var i = 0; i < _uploading; i++)
+                SizedBox(
+                  width: 120,
+                  height: 90,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+              if (_images.length + _uploading < ImageUploadService.maxImages)
+                SizedBox(
+                  width: 120,
+                  height: 90,
+                  child: OutlinedButton(
+                    onPressed: _addImages,
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [Icon(Icons.add_photo_alternate_outlined), SizedBox(height: 4), Text('Thêm ảnh')],
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 24),
           PrimaryButton(

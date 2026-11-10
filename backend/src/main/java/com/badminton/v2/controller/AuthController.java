@@ -115,6 +115,7 @@ public class AuthController {
             ));
             user.setAvatarUrl(firebaseUser.picture());
             user.setLocalPassword(false);
+            user.setProfileCompleted(false); // đăng nhập xong mở màn hoàn thiện hồ sơ (giới tính, trình độ)
             user = userRepository.save(user);
             walletTransactionRepository.save(new WalletTransaction(
                     user.getId(),
@@ -193,6 +194,10 @@ public class AuthController {
                 true,
                 LocalDateTime.now().format(FMT)
         );
+        String gender = normalizeGender(body.get("gender"));
+        if (gender != null) user.setGender(gender);
+        // Người chơi mới: sau khi xác thực email sẽ mở màn hoàn thiện hồ sơ (giới tính, trình độ)
+        user.setProfileCompleted(!"CUSTOMER".equals(role));
         user = userRepository.save(user);
 
         walletTransactionRepository.save(new WalletTransaction(
@@ -327,11 +332,22 @@ public class AuthController {
     @Transactional
     public ResponseEntity<?> updateProfile(@PathVariable Long userId, @RequestBody Map<String, String> body) {
         CurrentUser.requireSelfOrAdmin(userId);
-        return userRepository.findById(userId).map(u -> {
+        return userRepository.findById(userId).<ResponseEntity<?>>map(u -> {
             if (body.containsKey("fullName")) u.setFullName(body.get("fullName"));
             if (body.containsKey("phone")) u.setPhone(body.get("phone"));
             if (body.containsKey("skillLevel")) u.setSkillLevel(body.get("skillLevel"));
             if (body.containsKey("introVideoUrl")) u.setIntroVideoUrl(body.get("introVideoUrl"));
+            if (body.containsKey("gender")) {
+                String gender = normalizeGender(body.get("gender"));
+                if (gender == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Giới tính chỉ nhận Nam hoặc Nữ."));
+                }
+                u.setGender(gender);
+            }
+            // Hoàn thiện hồ sơ khi đã có giới tính và trình độ
+            if (!u.isProfileComplete() && u.getGender() != null && u.getSkillLevel() != null) {
+                u.setProfileCompleted(true);
+            }
             userRepository.save(u);
             return ResponseEntity.ok(buildAuthResponse(u));
         }).orElse(ResponseEntity.notFound().build());
@@ -414,6 +430,8 @@ public class AuthController {
         map.put("phone", user.getPhone());
         map.put("role", user.getRole());
         map.put("skillLevel", user.getSkillLevel());
+        map.put("gender", user.getGender() != null ? user.getGender() : "");
+        map.put("profileCompleted", user.isProfileComplete());
         map.put("introVideoUrl", user.getIntroVideoUrl() != null ? user.getIntroVideoUrl() : "");
         map.put("avatarUrl", user.getAvatarUrl() != null ? user.getAvatarUrl() : "");
         map.put("hasPassword", user.hasLocalPassword());
@@ -423,5 +441,14 @@ public class AuthController {
         map.put("verified", user.isVerified());
         map.put("active", user.isActive());
         return map;
+    }
+
+    /** "MALE" / "FEMALE" (nhận cả nam / nữ), null nếu không hợp lệ. */
+    private static String normalizeGender(String raw) {
+        if (raw == null) return null;
+        String g = raw.trim().toUpperCase();
+        if (g.equals("MALE") || g.equals("NAM")) return "MALE";
+        if (g.equals("FEMALE") || g.equals("NU") || g.equals("NỮ")) return "FEMALE";
+        return null;
     }
 }

@@ -368,7 +368,7 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`. Gọi `POST /api/auth/login
 | `JWT_SECRET` | (chuỗi demo) | Khóa ký JWT — **đổi khi chạy thật** |
 | `APP_DEMO_MODE` | `true` | Cho phép mật khẩu / OTP demo `123456`; đặt `false` khi chạy thật |
 | `FIREBASE_PROJECT_ID` | (trống) | Bật đăng nhập Google (kiểm tra Firebase ID token) |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | (trống), `gemini-2.5-flash` | Trợ lý AI dùng Gemini; để trống thì dùng bộ trả lời theo luật |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | (trống), `gemini-3.8-flash` | Trợ lý AI dùng Gemini; để trống thì dùng bộ trả lời theo luật |
 | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | (trống) | VietQR PayOS thật; để trống thì dùng chế độ giả lập |
 | `ROUTING_ENABLED`, `ROUTING_AUTO_IMPORT` | `true`, `true` | Bật tìm đường; lần đầu tự tải bản đồ đường TP.HCM (xem 9.4) |
 | `ROUTING_DATA_DIR`, `ROUTING_BBOX`, `OVERPASS_URL` | `./data/routing`, `10.60,106.40,11.10,106.95`, overpass-api.de | Nơi lưu đồ thị, vùng phủ (nam,tây,bắc,đông), máy chủ Overpass |
