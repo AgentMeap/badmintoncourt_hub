@@ -447,10 +447,13 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
                     ),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: (_loading || _sending) ? null : _newConversation,
-                  icon: const Icon(Icons.add_comment_outlined, size: 18),
-                  label: const Text('Cuộc trò chuyện mới'),
+                // Flexible: màn hẹp (360px) nút tự co lại, không đẩy dòng chữ bên trái xuống nhiều dòng
+                Flexible(
+                  child: TextButton.icon(
+                    onPressed: (_loading || _sending) ? null : _newConversation,
+                    icon: const Icon(Icons.add_comment_outlined, size: 18),
+                    label: const Text('Cuộc trò chuyện mới', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
                 ),
               ],
             ),

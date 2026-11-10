@@ -74,7 +74,8 @@ class PlatformCashflowTest extends IntegrationTestBase {
         // Doanh thu online chủ sân: trước đó đã gồm cả vé, sau khi hủy chỉ còn phần giữ lại
         assertEquals(before.path("onlineGrossRevenue").asDouble() - price / 2,
                 after.path("onlineGrossRevenue").asDouble(), 1.0);
-        assertEquals(before.path("availablePayoutGross").asDouble() - price / 2,
+        // Tiền có thể rút không âm (các test khác có thể đã xin rút hết)
+        assertEquals(Math.max(0, before.path("availablePayoutGross").asDouble() - price / 2),
                 after.path("availablePayoutGross").asDouble(), 1.0);
         // Phí sàn chỉ tính trên tiền online
         assertEquals(Math.round(after.path("onlineGrossRevenue").asDouble() * 0.05),

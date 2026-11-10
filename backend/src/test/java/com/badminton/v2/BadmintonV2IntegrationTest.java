@@ -1,9 +1,11 @@
 package com.badminton.v2;
 
 import com.badminton.v2.controller.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -31,6 +33,15 @@ class BadmintonV2IntegrationTest extends IntegrationTestBase {
 
     @Autowired
     private AiAssistantController aiAssistantController;
+
+    /**
+     * Spring test gắn sẵn một request giả vào luồng chạy test, khiến controller tưởng đang có request HTTP
+     * chưa đăng nhập. Test này gọi thẳng controller (như code nội bộ) nên bỏ request giả đó đi.
+     */
+    @BeforeEach
+    void callControllersDirectly() {
+        RequestContextHolder.resetRequestAttributes();
+    }
 
     @Test
     void testEndToEndAllFlowsAndModules() {
@@ -72,7 +83,9 @@ class BadmintonV2IntegrationTest extends IntegrationTestBase {
         assertEquals(200, adminOwnerFinanceController.getAdminDashboard().getStatusCode().value());
 
         // 6. Module 6: AI Assistant Chat
+        // Người chơi mới để không đụng hạn mức hỏi AI của tài khoản demo (các test khác dùng)
         ResponseEntity<?> aiRes = aiAssistantController.chatWithAi(Map.of(
+                "userId", newUser("CUSTOMER", 0).getId(),
                 "message", "Tìm sân trống tối nay gần Quận 10 và chính sách hoàn tiền"
         ));
         assertEquals(200, aiRes.getStatusCode().value());

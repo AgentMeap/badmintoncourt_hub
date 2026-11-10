@@ -151,7 +151,7 @@ public class BookingPaymentController {
             return ResponseEntity.status(409).body(Map.of("error", HOLD_EXPIRED_MESSAGE));
         }
 
-        long orderCode = System.currentTimeMillis() / 1000;
+        long orderCode = newOrderCode();
         int amountInt = (int) Math.round(booking.getTotalPrice());
         String description = "Dat san " + booking.getBookingCode();
 
@@ -385,7 +385,7 @@ public class BookingPaymentController {
         Payment payment = new Payment();
         payment.setBookingId(booking.getId());
         payment.setBookingCode(booking.getBookingCode());
-        payment.setPayosOrderCode(System.currentTimeMillis() / 1000);
+        payment.setPayosOrderCode(null); // trả bằng Ví, không có đơn PayOS (cột này là duy nhất)
         payment.setPaymentMethod("WALLET");
         payment.setAmount(booking.getTotalPrice());
         payment.setStatus("PAID");
@@ -833,6 +833,13 @@ public class BookingPaymentController {
         } catch (Exception e) {
             return 25;
         }
+    }
+
+    /** Mã đơn PayOS không trùng (2 người trả cùng một giây trước đây bị lỗi trùng khóa). */
+    private long newOrderCode() {
+        long code = System.currentTimeMillis();
+        while (paymentRepository.findByPayosOrderCode(code).isPresent()) code++;
+        return code;
     }
 
     private String hmacSha256(String data, String key) throws Exception {
