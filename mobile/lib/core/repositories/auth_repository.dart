@@ -72,4 +72,17 @@ class AuthRepository {
 
   Future<Json> topUpWallet(int userId, num amount) async =>
       asJson(await _api.post('/auth/wallet/$userId/topup', {'amount': amount}));
+
+  /// Nạp ví qua PayOS: tạo đơn -> { orderCode, amount, status, qrCodeData, checkoutUrl, live, canSimulate }.
+  Future<Json> createPayosTopup(int userId, num amount) async =>
+      asJson(await _api.post('/wallet/topup/payos', {'userId': userId, 'amount': amount}));
+
+  /// Trạng thái đơn nạp (máy chủ hỏi lại PayOS, đã thanh toán thì cộng ví).
+  Future<Json> topupStatus(int orderCode) async => asJson(await _api.get('/wallet/topup/$orderCode'));
+
+  /// Giả lập đã thanh toán (chỉ chế độ demo).
+  Future<Json> simulateTopup(int orderCode) async => asJson(await _api.post('/wallet/topup/$orderCode/simulate', {}));
+
+  /// Kiểm tra lại các đơn nạp còn chờ (khách đã chuyển khoản nhưng đóng màn QR sớm).
+  Future<Json> syncTopups(int userId) async => asJson(await _api.post('/wallet/topup/sync', {'userId': userId}));
 }

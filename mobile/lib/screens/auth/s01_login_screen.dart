@@ -7,8 +7,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 
 // S01: Login Screen
 // Giao diện theo design system (skill ui-ux-pro-max): logo vector thay emoji,
-// form hỗ trợ trình quản lý mật khẩu (autofill), hiện/ẩn mật khẩu,
-// khối chuyển nhanh 3 vai trò demo dạng ô icon + nhãn.
+// form hỗ trợ trình quản lý mật khẩu (autofill), hiện/ẩn mật khẩu.
 // Đăng nhập Google (Android): Google -> Firebase Auth -> Firebase ID token -> POST /auth/google
 // -> máy chủ kiểm tra token, tạo / tìm tài khoản và cấp JWT của app.
 class S01LoginScreen extends StatefulWidget {
@@ -91,52 +90,6 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(message)));
     }
-  }
-
-  /// Đăng nhập nhanh tài khoản demo theo vai trò.
-  Future<void> _demoLogin(String role) async {
-    if (_loading) return;
-    setState(() => _loading = true);
-    // Thành công thì AppState đã chuyển sang màn chính (màn này bị gỡ khỏi cây widget)
-    final error = await widget.appState.switchDemoRole(role);
-    if (!mounted) return;
-    setState(() => _loading = false);
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-    }
-  }
-
-  Widget _roleTile(BuildContext context, IconData icon, String label, String role) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    return Expanded(
-      child: Material(
-        color: cs.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: cs.outlineVariant),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: _loading ? null : () => _demoLogin(role),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-            child: Column(
-              children: [
-                Icon(icon, color: cs.primary),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -249,46 +202,6 @@ class _S01LoginScreenState extends State<S01LoginScreen> {
                 child: const Text('Đăng ký ngay'),
               ),
             ],
-          ),
-          const SizedBox(height: 24),
-
-          // Chuyển nhanh vai trò (phục vụ thuyết trình)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.science_outlined, size: 18, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Demo: vào nhanh theo vai trò',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _roleTile(context, Icons.person_outline, 'Người chơi', 'CUSTOMER'),
-                    const SizedBox(width: 8),
-                    _roleTile(context, Icons.storefront_outlined, 'Chủ sân', 'COURT_OWNER'),
-                    const SizedBox(width: 8),
-                    _roleTile(context, Icons.admin_panel_settings_outlined, 'Quản trị', 'ADMIN'),
-                  ],
-                ),
-              ],
-            ),
           ),
         ],
       ),

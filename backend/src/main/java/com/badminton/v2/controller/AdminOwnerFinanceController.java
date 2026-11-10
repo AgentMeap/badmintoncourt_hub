@@ -56,6 +56,7 @@ public class AdminOwnerFinanceController {
     private final UserRepository userRepository;
     private final EmailOtpService emailOtpService;
     private final NotificationService notificationService;
+    private final MatchParticipantRepository matchParticipantRepository;
 
     public AdminOwnerFinanceController(VenueRepository venueRepository,
                                        CourtRepository courtRepository,
@@ -64,7 +65,8 @@ public class AdminOwnerFinanceController {
                                        PayoutRequestRepository payoutRequestRepository,
                                        UserRepository userRepository,
                                        EmailOtpService emailOtpService,
-                                       NotificationService notificationService) {
+                                       NotificationService notificationService,
+                                       MatchParticipantRepository matchParticipantRepository) {
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.bookingRepository = bookingRepository;
@@ -73,6 +75,7 @@ public class AdminOwnerFinanceController {
         this.userRepository = userRepository;
         this.emailOtpService = emailOtpService;
         this.notificationService = notificationService;
+        this.matchParticipantRepository = matchParticipantRepository;
     }
 
     // ===================================================================== Chủ sân
@@ -104,6 +107,15 @@ public class AdminOwnerFinanceController {
                 if (today.equals(b.getPlayDate()) && BookingRules.blocksCourt(b)
                         && !"MAINTENANCE".equals(b.getBookingType())) {
                     bookedHoursToday += hoursOf(b);
+                }
+                double retained = retainedOf(b);
+                if (retained > 0) {
+                    // Vé hủy muộn: phần khách không được hoàn vẫn tính cho chủ sân (không tính là 1 ca chơi)
+                    totalGross += retained;
+                    if (isOnline(b)) onlineGross += retained;
+                    double[] retainedDay = byDay.get(b.getPlayDate());
+                    if (retainedDay != null) retainedDay[0] += retained;
+                    continue;
                 }
                 if (!isRevenue(b)) continue;
                 totalGross += b.getTotalPrice();
@@ -145,7 +157,8 @@ public class AdminOwnerFinanceController {
                 .mapToDouble(PayoutRequest::getNetPayoutAmount)
                 .sum();
         double availableGross = Math.max(0, onlineGross - requestedGross);
-        double commissionFee = commissionOf(totalGross);
+        // Phí sàn chỉ tính trên tiền đi qua nền tảng (PayOS / Ví), tiền mặt tại quầy không mất phí
+        double commissionFee = commissionOf(onlineGross);
 
         Map<String, Object> todayStats = new LinkedHashMap<>();
         todayStats.put("date", today);
@@ -199,7 +212,7 @@ public class AdminOwnerFinanceController {
 
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("sessions", bookings.stream().filter(this::isRevenue).count());
-        summary.put("revenue", bookings.stream().filter(this::isRevenue).mapToDouble(Booking::getTotalPrice).sum());
+        summary.put("revenue", bookings.stream().mapToDouble(this::revenueOf).sum());
         summary.put("waitingCheckIn", bookings.stream()
                 .filter(b -> "CONFIRMED".equals(b.getStatus()) && !"MAINTENANCE".equals(b.getBookingType()))
                 .count());
@@ -283,6 +296,60 @@ public class AdminOwnerFinanceController {
     }
 
     /**
+     * Dòng tiền nền tảng (thẻ trên Trang chủ Admin):
+     * khách trả online cho các sân -> nền tảng giữ -> chủ sân xin rút -> Admin chuyển khoản (trừ 5% phí sàn).
+     * Tiền nền tảng đang giữ = tiền sân thu online - tiền đã chuyển cho chủ sân + số dư Ví người dùng + cọc kèo đang giữ.
+     */
+    private Map<String, Object> platformCashflow(List<Venue> venues, List<User> users, List<PayoutRequest> payouts) {
+        double ownerOnline = 0;
+        double retainedTotal = 0;
+        for (Venue v : venues) {
+            for (Booking b : bookingRepository.findByVenueIdOrderByIdDesc(v.getId())) {
+                if (!isOnline(b)) continue;
+                ownerOnline += revenueOf(b);
+                retainedTotal += retainedOf(b);
+            }
+        }
+        double paidGross = 0, paidNet = 0, feeEarned = 0, pendingGross = 0, pendingNet = 0;
+        for (PayoutRequest p : payouts) {
+            if ("PAID".equals(p.getStatus())) {
+                paidGross += p.getGrossAmount();
+                paidNet += p.getNetPayoutAmount();
+                feeEarned += p.getCommissionFee();
+            } else if ("PENDING".equals(p.getStatus())) {
+                pendingGross += p.getGrossAmount();
+                pendingNet += p.getNetPayoutAmount();
+            }
+        }
+        double unrequested = 0;
+        for (User u : users) {
+            if ("COURT_OWNER".equals(u.getRole())) unrequested += availablePayoutGross(u.getId());
+        }
+        double walletTotal = users.stream()
+                .filter(u -> !"ADMIN".equals(u.getRole()))
+                .mapToDouble(User::getWalletBalance)
+                .sum();
+        double heldDeposits = matchParticipantRepository.findAll().stream()
+                .filter(mp -> "HELD".equals(mp.getDepositStatus()) && mp.getDepositAmount() != null)
+                .mapToDouble(MatchParticipant::getDepositAmount)
+                .sum();
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ownerOnlineRevenue", ownerOnline);
+        res.put("retainedFromCancellations", retainedTotal);
+        res.put("payoutPaidGross", paidGross);
+        res.put("payoutPaidNet", paidNet);
+        res.put("platformFeeEarned", feeEarned);
+        res.put("payoutPendingGross", pendingGross);
+        res.put("payoutPendingNet", pendingNet);
+        res.put("ownerUnrequested", unrequested);
+        res.put("userWalletTotal", walletTotal);
+        res.put("heldMatchDeposits", heldDeposits);
+        res.put("platformHolding", Math.max(0, ownerOnline - paidNet) + walletTotal + heldDeposits);
+        return res;
+    }
+
+    /**
      * Doanh thu thanh toán online (PayOS / Ví) của chủ sân trừ phần đã gửi yêu cầu giải ngân
      * (trừ yêu cầu bị từ chối). Tiền mặt khách vãng lai chủ sân đã thu tại quầy nên không tính.
      */
@@ -290,7 +357,7 @@ public class AdminOwnerFinanceController {
         double online = 0;
         for (Venue v : venueRepository.findByOwnerIdOrderByIdDesc(ownerId)) {
             for (Booking b : bookingRepository.findByVenueIdOrderByIdDesc(v.getId())) {
-                if (isRevenue(b) && isOnline(b)) online += b.getTotalPrice();
+                if (isOnline(b)) online += revenueOf(b);
             }
         }
         double requested = payoutRequestRepository.findByOwnerIdOrderByIdDesc(ownerId).stream()
@@ -308,7 +375,10 @@ public class AdminOwnerFinanceController {
         List<Venue> allVenues = venueRepository.findAll();
         List<User> allUsers = userRepository.findAll();
         List<PayoutRequest> allPayouts = payoutRequestRepository.findAllByOrderByIdDesc();
-        List<Payment> paidPayments = paymentRepository.findByStatusOrderByIdDesc("PAID");
+        // Nạp ví không phải doanh thu đặt sân
+        List<Payment> paidPayments = paymentRepository.findByStatusOrderByIdDesc("PAID").stream()
+                .filter(p -> !"TOPUP".equals(p.getPurpose()))
+                .toList();
         String today = LocalDate.now().toString();
 
         double totalGmv = paidPayments.stream().mapToDouble(Payment::getAmount).sum();
@@ -354,6 +424,7 @@ public class AdminOwnerFinanceController {
         res.put("users", allUsers);
         res.put("payoutRequests", allPayouts);
         res.put("recentPayments", paidPayments.subList(0, Math.min(20, paidPayments.size())));
+        res.put("cashflow", platformCashflow(allVenues, allUsers, allPayouts));
         return ResponseEntity.ok(res);
     }
 
@@ -457,6 +528,16 @@ public class AdminOwnerFinanceController {
 
     private boolean isRevenue(Booking b) {
         return REVENUE_STATUSES.contains(b.getStatus()) && !"MAINTENANCE".equals(b.getBookingType());
+    }
+
+    /** Phần tiền giữ lại của vé đã thanh toán nhưng bị hủy muộn. */
+    private static double retainedOf(Booking b) {
+        return "CANCELLED".equals(b.getStatus()) && b.getRetainedAmount() != null ? b.getRetainedAmount() : 0;
+    }
+
+    /** Doanh thu của một vé với chủ sân: vé hợp lệ = giá vé, vé hủy muộn = phần giữ lại. */
+    private double revenueOf(Booking b) {
+        return isRevenue(b) ? b.getTotalPrice() : retainedOf(b);
     }
 
     private boolean isOnline(Booking b) {

@@ -539,6 +539,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// Nạp tiền vào Ví (chỉ khi máy chủ bật chế độ demo). Lỗi -> ApiException.
+  /// Kiểm tra các đơn nạp PayOS còn chờ rồi tải lại ví (gọi khi mở màn Ví).
+  Future<void> syncTopupsAndRefreshWallet() async {
+    try {
+      await Repos.auth.syncTopups(userId);
+    } catch (e) {
+      debugPrint('[topup] $e');
+    }
+    await refreshWallet();
+  }
+
   Future<void> topUpWallet(num amount) async {
     final res = await Repos.auth.topUpWallet(userId, amount);
     _applyUserFields(res);

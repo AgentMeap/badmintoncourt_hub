@@ -7,7 +7,7 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 import 'package:badminton_v2_mobile/core/widgets/day_bar_chart.dart';
 
 // S24: Admin Platform Overview Dashboard (Luồng 3)
-// Số liệu từ GET /admin/dashboard (máy chủ tính trên toàn bộ dữ liệu): GMV online và hoa hồng,
+// Số liệu từ GET /admin/dashboard (máy chủ tính trên toàn bộ dữ liệu): GMV online và hoa hồng, dòng tiền nền tảng,
 // GMV 7 ngày, số ca hôm nay, người dùng theo vai trò, việc cần xử lý (duyệt cơ sở, giải ngân).
 class S24AdminDashboardScreen extends StatefulWidget {
   final AppState appState;
@@ -110,6 +110,8 @@ class _S24AdminDashboardScreenState extends State<S24AdminDashboardScreen> {
     final gmv7 = asJsonList(d['gmvLast7Days']);
     final total7 = gmv7.fold<num>(0, (s, r) => s + UiFmt.toNum(r['amount'], 0));
     final percent = (UiFmt.toNum(d['commissionRate'], OwnerFinance.commissionRate) * 100).round();
+    final cashflow = asJson(d['cashflow']);
+    num cf(String key) => UiFmt.toNum(cashflow[key], 0);
 
     return ResponsiveCenter(
       maxWidth: Responsive.defaultContentMaxWidth,
@@ -143,6 +145,63 @@ class _S24AdminDashboardScreenState extends State<S24AdminDashboardScreen> {
               ),
             ]),
             const SizedBox(height: 24),
+
+            if (cashflow.isNotEmpty) ...[
+              const SectionHeader('Dòng tiền nền tảng'),
+              SurfaceCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    InfoRow(
+                        icon: Icons.payments_outlined,
+                        label: 'Khách trả online cho các sân',
+                        value: UiFmt.vnd(cf('ownerOnlineRevenue'))),
+                    if (cf('retainedFromCancellations') > 0)
+                      InfoRow(
+                          icon: Icons.replay_rounded,
+                          label: 'Trong đó: giữ lại khi khách hủy muộn',
+                          value: UiFmt.vnd(cf('retainedFromCancellations'))),
+                    InfoRow(
+                        icon: Icons.account_balance_outlined,
+                        label: 'Đã chuyển cho chủ sân',
+                        value: UiFmt.vnd(cf('payoutPaidNet'))),
+                    InfoRow(
+                        icon: Icons.percent,
+                        label: 'Phí sàn đã thu ($percent%)',
+                        value: UiFmt.vnd(cf('platformFeeEarned'))),
+                    InfoRow(
+                        icon: Icons.hourglass_top_rounded,
+                        label: 'Chờ Admin chuyển khoản',
+                        value: UiFmt.vnd(cf('payoutPendingNet'))),
+                    InfoRow(
+                        icon: Icons.storefront_outlined,
+                        label: 'Chủ sân chưa yêu cầu rút',
+                        value: UiFmt.vnd(cf('ownerUnrequested'))),
+                    InfoRow(
+                        icon: Icons.account_balance_wallet_outlined,
+                        label: 'Số dư Ví người dùng',
+                        value: UiFmt.vnd(cf('userWalletTotal'))),
+                    InfoRow(
+                        icon: Icons.lock_clock_outlined,
+                        label: 'Cọc kèo đang giữ',
+                        value: UiFmt.vnd(cf('heldMatchDeposits'))),
+                    const Divider(height: 16),
+                    InfoRow(
+                        icon: Icons.savings_outlined,
+                        label: 'Nền tảng đang giữ',
+                        value: UiFmt.vnd(cf('platformHolding')),
+                        emphasize: true),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Khách trả qua PayOS / Ví thì tiền về tài khoản nền tảng. Chủ sân xin rút, Admin chuyển khoản '
+                      'sau khi trừ $percent% phí sàn. Tiền mặt tại quầy chủ sân tự thu, không qua nền tảng.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
 
             if (gmv7.isNotEmpty) ...[
               SectionHeader('GMV 7 ngày',

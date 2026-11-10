@@ -52,6 +52,11 @@ public abstract class IntegrationTestBase {
         // Không gọi Gemini thật khi test (máy dev có thể đang đặt GEMINI_API_KEY)
         registry.add("app.gemini.api-key", () -> "");
         registry.add("app.demo-mode", () -> "true");
+        // Không gọi PayOS thật khi test (máy dev có thể có key trong application-secret.properties)
+        registry.add("app.demo.second-owner", () -> "false");
+        registry.add("app.payos.client-id", () -> "");
+        registry.add("app.payos.api-key", () -> "");
+        registry.add("app.payos.checksum-key", () -> "");
         // Không tải bản đồ đường OSM khi chạy test (RouteApiTest tự nạp lưới đường giả)
         registry.add("app.routing.enabled", () -> "false");
     }

@@ -5,13 +5,14 @@ import 'package:badminton_v2_mobile/core/widgets/user_avatar.dart';
 import 'package:badminton_v2_mobile/core/responsive.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
 import 'package:badminton_v2_mobile/core/video_link.dart';
+import 'package:badminton_v2_mobile/screens/customer/wallet_topup_qr_sheet.dart';
 
 // S18: Customer Profile & In-App Wallet Screen
 // Giao diện theo design system: thẻ ví màu primary của Theme, số dư định dạng
 // tiền Việt, thao tác nhanh dạng ô icon, lịch sử giao dịch có icon theo loại,
 // đăng xuất có hộp thoại xác nhận.
 // Số dư + lịch sử giao dịch tải lại từ máy chủ (GET /auth/profile) khi mở màn và khi kéo xuống.
-// Nạp tiền (POST /auth/wallet/{id}/topup) chỉ hiện khi máy chủ bật chế độ demo.
+// Nạp tiền qua PayOS VietQR (POST /wallet/topup/payos): tiền chỉ vào Ví khi PayOS xác nhận đã thanh toán.
 class S18ProfileWalletScreen extends StatefulWidget {
   final AppState appState;
   const S18ProfileWalletScreen({super.key, required this.appState});
@@ -28,7 +29,7 @@ class _S18ProfileWalletScreenState extends State<S18ProfileWalletScreen> {
   @override
   void initState() {
     super.initState();
-    appState.refreshWallet();
+    appState.syncTopupsAndRefreshWallet();
   }
 
   Future<void> _openTopUp(BuildContext context) async {
@@ -39,15 +40,24 @@ class _S18ProfileWalletScreenState extends State<S18ProfileWalletScreen> {
       builder: (ctx) => const _TopUpSheet(presets: _topUpPresets),
     );
     if (amount == null || !context.mounted) return;
+    Map<String, dynamic> order;
     try {
-      await appState.topUpWallet(amount);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Đã nạp ${UiFmt.vnd(amount)} vào Ví.')));
+      order = await Repos.auth.createPayosTopup(appState.userId, amount);
     } catch (e) {
       if (context.mounted) showApiError(context, e);
+      return;
     }
+    if (!context.mounted) return;
+    final paid = await WalletTopupQrSheet.show(context, order);
+    await appState.refreshWallet();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(paid
+            ? 'Đã nạp ${UiFmt.vnd(amount)} vào Ví.'
+            : 'Đơn nạp đang chờ. Nếu bạn đã chuyển khoản, tiền sẽ vào Ví khi PayOS xác nhận.'),
+      ));
   }
 
   static (IconData, String) _txMeta(String? type, bool positive) {
@@ -108,7 +118,7 @@ class _S18ProfileWalletScreenState extends State<S18ProfileWalletScreen> {
     final ok = await confirmAction(
       context,
       title: 'Đăng xuất?',
-      message: 'Bạn sẽ quay về màn hình đăng nhập. Có thể chọn vai trò khác để demo.',
+      message: 'Bạn sẽ quay về màn hình đăng nhập.',
       confirmLabel: 'Đăng xuất',
     );
     if (ok) appState.logout();
@@ -219,10 +229,8 @@ class _S18ProfileWalletScreenState extends State<S18ProfileWalletScreen> {
                       // Mở màn nhập số tiền & tài khoản trước, OTP sau (S27 -> S03)
                       _quickAction(context, Icons.account_balance_outlined, 'Rút tiền',
                           () => appState.goTo('S27')),
-                      if (appState.serverDemoMode) ...[
-                        const SizedBox(width: 8),
-                        _quickAction(context, Icons.add_card_outlined, 'Nạp tiền', () => _openTopUp(context)),
-                      ],
+                      const SizedBox(width: 8),
+                      _quickAction(context, Icons.add_card_outlined, 'Nạp tiền', () => _openTopUp(context)),
                     ],
                   ),
                 ],
@@ -382,7 +390,7 @@ class _TopUpSheetState extends State<_TopUpSheet> {
           Text('Nạp tiền vào Ví', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(
-            'Chế độ demo: tiền được cộng ngay, không qua cổng thanh toán.',
+            'Thanh toán bằng mã VietQR qua PayOS. Tiền vào Ví ngay khi giao dịch thành công.',
             style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 16),

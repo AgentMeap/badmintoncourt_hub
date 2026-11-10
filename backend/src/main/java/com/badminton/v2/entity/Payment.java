@@ -23,6 +23,10 @@ public class Payment {
     private String qrCodeData;
     private String paidAt;
     private String createdAt;
+    /** null / BOOKING = thanh toán đặt sân, TOPUP = nạp Ví Cầu Lông. */
+    private String purpose;
+    /** Người nạp (chỉ dùng cho TOPUP). */
+    private Long userId;
 
     public Payment() {}
 
@@ -48,4 +52,8 @@ public class Payment {
     public void setPaidAt(String paidAt) { this.paidAt = paidAt; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public String getPurpose() { return purpose; }
+    public void setPurpose(String purpose) { this.purpose = purpose; }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 }

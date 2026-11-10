@@ -4,6 +4,7 @@ import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.NotificationService;
 import com.badminton.v2.service.BookingRules;
+import com.badminton.v2.service.WalletTopupService;
 import com.badminton.v2.security.CurrentUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ public class BookingPaymentController {
     private final WalletTransactionRepository walletTransactionRepository;
     private final NotificationService notificationService;
     private final RestClient restClient;
+    private final WalletTopupService topupService;
 
     @Value("${app.payos.client-id:}")
     private String payosClientId;
@@ -64,7 +66,8 @@ public class BookingPaymentController {
                                     UserRepository userRepository,
                                     WalletTransactionRepository walletTransactionRepository,
                                     NotificationService notificationService,
-                                    RestClient restClient) {
+                                    RestClient restClient,
+                                    WalletTopupService topupService) {
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
@@ -73,6 +76,7 @@ public class BookingPaymentController {
         this.userRepository = userRepository;
         this.walletTransactionRepository = walletTransactionRepository;
         this.notificationService = notificationService;
+        this.topupService = topupService;
         this.restClient = restClient;
     }
 
@@ -233,6 +237,16 @@ public class BookingPaymentController {
     @PostMapping("/payments/simulate-webhook/{orderCode}")
     @Transactional
     public ResponseEntity<?> simulatePayosWebhook(@PathVariable Long orderCode) {
+        Optional<Payment> topup = paymentRepository.findByPayosOrderCode(orderCode).filter(WalletTopupService::isTopup);
+        if (topup.isPresent()) {
+            // Đơn nạp ví: dùng /api/wallet/topup/{orderCode}/simulate (chỉ demo)
+            CurrentUser.requireSelfOrAdmin(topup.get().getUserId());
+            try {
+                return ResponseEntity.ok(topupService.view(topupService.simulatePaid(topup.get())));
+            } catch (WalletTopupService.TopupException e) {
+                return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getMessage()));
+            }
+        }
         paymentRepository.findByPayosOrderCode(orderCode)
                 .flatMap(p -> bookingRepository.findById(p.getBookingId()))
                 .ifPresent(b -> CurrentUser.requireSelfOrAdmin(b.getCustomerId()));
@@ -243,6 +257,10 @@ public class BookingPaymentController {
     @GetMapping("/payments/{orderCode}/status")
     public ResponseEntity<?> getPaymentStatus(@PathVariable Long orderCode) {
         Payment payment = paymentRepository.findByPayosOrderCode(orderCode).orElseThrow();
+        if (WalletTopupService.isTopup(payment)) {
+            CurrentUser.requireSelfOrAdmin(payment.getUserId());
+            return ResponseEntity.ok(topupService.view(topupService.sync(payment)));
+        }
         Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
         CurrentUser.requireSelfOrAdmin(booking.getCustomerId());
         Map<String, Object> res = new LinkedHashMap<>();
@@ -264,6 +282,13 @@ public class BookingPaymentController {
             return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy mã đơn PayOS: " + orderCode));
         }
         Payment payment = opt.get();
+        if (WalletTopupService.isTopup(payment)) {
+            // Nạp ví: không tin nội dung webhook, hỏi lại PayOS rồi mới cộng tiền
+            if (!realPayment) {
+                return ResponseEntity.status(403).body(Map.of("error", "Dùng nút giả lập trong màn nạp tiền."));
+            }
+            return ResponseEntity.ok(Map.of("success", true, "topup", topupService.view(topupService.sync(payment))));
+        }
         Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
 
         // Webhook có thể gửi lại nhiều lần: đơn đã xác nhận thì trả kết quả cũ
@@ -543,6 +568,8 @@ public class BookingPaymentController {
 
         double refundAmount = Math.round((b.getTotalPrice() * refundPercent) / 100.0);
         b.setStatus("CANCELLED");
+        // Phần không hoàn (hủy muộn) vẫn là doanh thu của chủ sân, được tính vào tiền giải ngân
+        b.setRetainedAmount(paid ? Math.max(0, b.getTotalPrice() - refundAmount) : 0.0);
         bookingRepository.save(b);
 
         Refund refund = new Refund();

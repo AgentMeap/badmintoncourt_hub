@@ -30,6 +30,8 @@ public class Booking {
     private String qrCheckInToken;
     private String paymentMethod; // PAYOS_QR, WALLET, CASH
     private String createdAt;
+    /** Vé đã thanh toán rồi bị hủy: phần tiền không hoàn cho khách (thuộc doanh thu chủ sân). */
+    private Double retainedAmount;
 
     public Booking() {}
 
@@ -73,4 +75,6 @@ public class Booking {
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public Double getRetainedAmount() { return retainedAmount; }
+    public void setRetainedAmount(Double retainedAmount) { this.retainedAmount = retainedAmount; }
 }

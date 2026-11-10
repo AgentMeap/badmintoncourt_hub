@@ -173,6 +173,10 @@ public class AuthController {
         if (email.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng nhập Email hợp lệ"));
         }
+        // Chỉ tự đăng ký được Người chơi hoặc Chủ sân; tài khoản Admin không tạo qua API công khai
+        if (!List.of("CUSTOMER", "COURT_OWNER").contains(role)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Vai trò đăng ký không hợp lệ."));
+        }
         if (userRepository.findByEmailIgnoreCase(email).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email này đã được đăng ký"));
         }

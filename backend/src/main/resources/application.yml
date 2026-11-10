@@ -49,6 +49,9 @@ app:
   # true: chấp nhận mật khẩu / OTP demo "123456" và trả mã OTP trong phản hồi (trình bày trên lớp).
   # Đặt APP_DEMO_MODE=false khi chạy thật.
   demo-mode: ${APP_DEMO_MODE:true}
+  demo:
+    # Tạo thêm chủ sân owner2@badminton.vn (4 cơ sở) để trình bày dòng tiền theo từng chủ sân
+    second-owner: ${APP_DEMO_SECOND_OWNER:true}
   firebase:
     # Project ID trong Firebase Console > Project settings (dùng để kiểm tra ID token đăng nhập Google)
     project-id: ${FIREBASE_PROJECT_ID:}

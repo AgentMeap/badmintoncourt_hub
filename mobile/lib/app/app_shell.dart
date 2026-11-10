@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/responsive.dart';
-import 'app_drawer.dart';
 import 'app_navigation.dart';
 import 'scroll_to_top.dart';
 import 'screen_registry.dart';
 
 /// "Master page" của app: khung cố định bao quanh mọi màn hình.
-/// - AppBar: nút Back (màn con) hoặc menu (màn gốc), tiêu đề, Trợ lý AI, Thông báo
-/// - Drawer: menu demo 26 màn + chọn sáng/tối
+/// - AppBar: nút Back (màn con), tiêu đề, Trợ lý AI, Thông báo, menu tài khoản (giao diện sáng/tối, đăng xuất)
 /// - Điều hướng thích ứng: thanh tab dưới (< 600px) hoặc rail bên trái (>= 600px)
 /// - PopScope: phím Back Android đi lùi theo lịch sử, chỉ thoát app ở màn đầu tiên
 /// - Thông báo mới: hỏi máy chủ 30 giây/lần khi app đang mở, hiện banner kèm nút "Xem"
@@ -37,6 +35,8 @@ class AppShell extends StatelessWidget {
         final isRootScreen = code == 'S01' || (navSpec?.isRoot(code) ?? false);
         final showBack = appState.canGoBack && !isRootScreen;
         final isMobile = Responsive.isMobile(context);
+        // Màn đăng nhập / đăng ký / OTP / quên mật khẩu: chưa đăng nhập -> ẩn thông báo, menu tài khoản
+        final isAuthScreen = const {'S01', 'S02', 'S03', 'S04'}.contains(code);
 
         return PopScope(
           canPop: !appState.canGoBack,
@@ -66,24 +66,25 @@ class AppShell extends StatelessWidget {
               ),
               actions: [
                 // Trợ lý AI chỉ dành cho người chơi
-                if (appState.role == 'CUSTOMER')
+                if (appState.role == 'CUSTOMER' && !isAuthScreen)
                   IconButton(
                     tooltip: 'Trợ lý AI',
                     onPressed: () => appState.goTo('S17'),
                     icon: const Icon(Icons.smart_toy_outlined),
                   ),
-                IconButton(
-                  tooltip: 'Thông báo',
-                  onPressed: () => appState.goTo('S05'),
-                  icon: Badge(
-                    isLabelVisible: appState.unreadNotificationCount > 0,
-                    label: Text('${appState.unreadNotificationCount}'),
-                    child: const Icon(Icons.notifications_outlined),
+                if (!isAuthScreen)
+                  IconButton(
+                    tooltip: 'Thông báo',
+                    onPressed: () => appState.goTo('S05'),
+                    icon: Badge(
+                      isLabelVisible: appState.unreadNotificationCount > 0,
+                      label: Text('${appState.unreadNotificationCount}'),
+                      child: const Icon(Icons.notifications_outlined),
+                    ),
                   ),
-                ),
+                if (!isAuthScreen) AccountMenuButton(appState: appState),
               ],
             ),
-            drawer: AppDrawer(appState: appState),
             // SafeArea: không bị tai thỏ / Dynamic Island / cạnh ngang che nội dung
             body: NotificationWatcher(
               appState: appState,
@@ -196,5 +197,93 @@ class _NotificationWatcherState extends State<NotificationWatcher> with WidgetsB
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// Menu tài khoản trên AppBar (thay cho menu bên cũ): tên + vai trò, chọn giao diện sáng / tối, đăng xuất.
+class AccountMenuButton extends StatelessWidget {
+  final AppState appState;
+  const AccountMenuButton({super.key, required this.appState});
+
+  static const _roleLabels = {
+    'CUSTOMER': 'Người chơi',
+    'COURT_OWNER': 'Chủ sân',
+    'ADMIN': 'Quản trị viên',
+  };
+
+  Future<void> _logout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Bạn sẽ quay về màn hình đăng nhập.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Quay lại')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất')),
+        ],
+      ),
+    );
+    if (ok == true) appState.logout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return PopupMenuButton<String>(
+      tooltip: 'Tài khoản',
+      icon: const Icon(Icons.account_circle_outlined),
+      onSelected: (v) {
+        switch (v) {
+          case 'system':
+            appState.setThemeMode(ThemeMode.system);
+          case 'light':
+            appState.setThemeMode(ThemeMode.light);
+          case 'dark':
+            appState.setThemeMode(ThemeMode.dark);
+          case 'logout':
+            _logout(context);
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(appState.fullName.split('(').first.trim(),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700, color: theme.colorScheme.onSurface)),
+              Text(_roleLabels[appState.role] ?? appState.role,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem<String>(
+          value: 'system',
+          checked: appState.themeMode == ThemeMode.system,
+          child: const Text('Giao diện theo hệ thống'),
+        ),
+        CheckedPopupMenuItem<String>(
+          value: 'light',
+          checked: appState.themeMode == ThemeMode.light,
+          child: const Text('Giao diện sáng'),
+        ),
+        CheckedPopupMenuItem<String>(
+          value: 'dark',
+          checked: appState.themeMode == ThemeMode.dark,
+          child: const Text('Giao diện tối'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: 'logout',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.logout),
+            title: Text('Đăng xuất'),
+          ),
+        ),
+      ],
+    );
+  }
 }
 

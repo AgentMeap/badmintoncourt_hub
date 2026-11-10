@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../screens/screens.dart';
 
-/// Thông tin một màn hình: mã, tiêu đề đầy đủ (dùng trong menu demo) và cách tạo widget.
+/// Thông tin một màn hình: mã (dùng nội bộ để điều hướng), tiêu đề và cách tạo widget. Mã không hiện cho người dùng.
 class ScreenEntry {
   final String code;
   final String fullTitle;

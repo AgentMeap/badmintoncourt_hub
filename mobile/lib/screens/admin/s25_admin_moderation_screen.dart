@@ -128,7 +128,7 @@ class _S25AdminModerationScreenState extends State<S25AdminModerationScreen> {
     });
     _app.pushNotification(
       title: approve ? 'Đã duyệt cơ sở "${v['name']}"' : 'Đã từ chối cơ sở "${v['name']}"',
-      body: approve ? 'Cơ sở đã hiển thị trên Bản đồ (S07) và Trang chủ (S06).' : 'Đã gửi lý do từ chối cho chủ sân.',
+      body: approve ? 'Cơ sở đã hiển thị trên Bản đồ và Trang chủ.' : 'Đã gửi lý do từ chối cho chủ sân.',
       type: 'SYSTEM',
       targetScreen: approve ? 'S06' : 'S25',
       context: context,
