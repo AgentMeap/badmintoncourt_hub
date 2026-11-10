@@ -36,13 +36,14 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
   static const _maxLength = 300;
   static const _greeting = 'Xin chào! Mình là Trợ lý AI Cầu Lông. Mình có thể giúp bạn:\n'
       '• Tìm sân còn trống và giữ chỗ ngay trong khung chat\n'
-      '• Gợi ý kèo giao lưu hợp trình độ\n'
-      '• Giải đáp bảng giá, chính sách hủy, hoàn tiền và đổi lịch';
+      '• Gợi ý kèo giao lưu hợp trình độ (lọc chủ kèo uy tín, kèo không cọc) và xem kèo của bạn\n'
+      '• Giải đáp bảng giá, chính sách hủy, hoàn tiền, đổi lịch và cọc kèo';
   static const _defaultChips = [
     'Sân trống tối nay',
     'Kèo hợp trình độ của tôi',
     'Chính sách hủy sân',
     'Vé sắp tới của tôi',
+    'Kèo của tôi',
   ];
 
   final _msgCtrl = TextEditingController();
@@ -236,32 +237,8 @@ class _S17AiAssistantChatScreenState extends State<S17AiAssistantChatScreen> {
     }
   }
 
-  Future<void> _openMatch(Object matchId) async {
-    Json? find() {
-      for (final m in _app.matches) {
-        if ('${asJson(m['post'])['id']}' == '$matchId') return m;
-      }
-      return null;
-    }
-
-    var entry = find();
-    if (entry == null) {
-      try {
-        _app.matches = await Repos.match.list();
-        entry = find();
-      } catch (e) {
-        if (mounted) showApiError(context, e);
-        return;
-      }
-    }
-    if (!mounted) return;
-    if (entry == null) {
-      _snack('Kèo này không còn mở.');
-      return;
-    }
-    _app.selectedMatch = entry;
-    _app.goTo('S30');
-  }
+  /// Mở chi tiết kèo: S30 tự tải bản mới nhất từ máy chủ (kể cả kèo của tôi, kèo đã hủy / kết thúc).
+  void _openMatch(Object matchId) => _app.openMatch(matchId);
 
   Future<void> _openBooking(Object bookingId) async {
     Json? booking;

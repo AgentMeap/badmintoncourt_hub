@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth/google_auth_service.dart';
 import 'demo_seed.dart';
 import 'location_service.dart';
+import 'push/push_service.dart';
 import 'repositories/repositories.dart';
 
 class AppState extends ChangeNotifier {
@@ -51,14 +54,18 @@ class AppState extends ChangeNotifier {
   /// S30 tự mở bảng đánh giá chủ kèo (mở từ thông báo "Đánh giá chủ kèo").
   bool openMatchReview = false;
 
+  /// S30 tự mở khung nhóm chat (mở từ thông báo tin nhắn mới).
+  bool openMatchChat = false;
+
   /// Tab mở sẵn ở S15: 0 = Tìm kèo, 1 = Kèo của tôi.
   int matchTab = 0;
 
   /// Mở chi tiết kèo [matchId] (S30). Dùng dữ liệu có sẵn trên máy để hiện ngay, S30 sẽ tải lại.
-  void openMatch(Object matchId, {bool focusRequests = false, bool review = false}) {
+  void openMatch(Object matchId, {bool focusRequests = false, bool review = false, bool openChat = false}) {
     openMatchId = matchId;
     openMatchFocusRequests = focusRequests;
     openMatchReview = review;
+    openMatchChat = openChat;
     selectedMatch = null;
     for (final m in matches) {
       final post = m['post'];
@@ -303,6 +310,7 @@ class AppState extends ChangeNotifier {
     backendReachable = true;
     notifyListeners();
     await saveSession(token: token);
+    unawaited(PushService.instance.syncRegistration(this)); // đăng ký thông báo đẩy cho tài khoản này
   }
 
   void _applyUserFields(Map<String, dynamic> res) {
@@ -435,10 +443,99 @@ class AppState extends ChangeNotifier {
     _notificationsLoadedAt = DateTime.now();
     try {
       notifications = await Repos.notification.list(userId);
+      _latestNotificationId = _maxServerNotificationId(notifications, _latestNotificationId);
       notifyListeners();
     } catch (e) {
       debugPrint('[notifications] $e');
     }
+  }
+
+  // ------------------------------------------------------------ Hỏi thông báo định kỳ
+
+  /// Hỏi thông báo mới mỗi 30 giây khi app đang mở (AppShell bật / tắt theo vòng đời app).
+  static const notificationPollInterval = Duration(seconds: 30);
+  Timer? _notificationTimer;
+  int _latestNotificationId = 0;
+
+  /// Thông báo vừa đến (chưa đọc) để AppShell hiện banner; AppShell đọc xong thì đặt lại null.
+  Map<String, dynamic>? incomingNotification;
+
+  /// Id lớn nhất của thông báo từ máy chủ (bỏ qua thông báo tạo cục bộ, id = mili giây).
+  static int _maxServerNotificationId(List<Map<String, dynamic>> list, int current) {
+    var max = current;
+    for (final n in list) {
+      final id = asNum(n['id'])?.toInt() ?? 0;
+      if (id > max && id < 1000000000) max = id;
+    }
+    return max;
+  }
+
+  void startNotificationPolling() {
+    _notificationTimer ??= Timer.periodic(notificationPollInterval, (_) => pollNotifications());
+    pollNotifications();
+    unawaited(PushService.instance.syncRegistration(this));
+  }
+
+  void stopNotificationPolling() {
+    _notificationTimer?.cancel();
+    _notificationTimer = null;
+  }
+
+  /// Hỏi nhẹ `unread-count`; có thông báo mới thì tải danh sách và đặt [incomingNotification].
+  Future<void> pollNotifications() async {
+    if (!ApiClient.instance.hasToken || currentScreen == 'S01' || isOfflineDemo) return;
+    try {
+      final res = await Repos.notification.unreadCount(userId);
+      final latest = asNum(res['latestId'])?.toInt() ?? 0;
+      if (latest <= _latestNotificationId) return;
+      final firstPoll = _latestNotificationId == 0;
+      final previous = _latestNotificationId;
+      notifications = await Repos.notification.list(userId);
+      _notificationsLoadedAt = DateTime.now();
+      _latestNotificationId = _maxServerNotificationId(notifications, latest);
+      if (!firstPoll) {
+        for (final n in notifications) {
+          final id = asNum(n['id'])?.toInt() ?? 0;
+          if (id > previous && id < 1000000000 && n['isRead'] != true) {
+            incomingNotification = n;
+            break; // danh sách mới nhất trước
+          }
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[notifications] $e');
+    }
+  }
+
+  /// Mở màn liên quan tới thông báo (dùng ở S05 và banner thông báo mới).
+  /// Thông báo kèo có id kèo (referenceId) thì mở đúng kèo đó:
+  /// - Tin nhắn mới -> S30 và mở luôn nhóm chat
+  /// - "Có người xin tham gia" -> S30, cuộn tới mục Đơn xin tham gia
+  /// - "Đánh giá chủ kèo" -> S30 và mở bảng đánh giá
+  /// - Các thông báo kèo khác có targetScreen S30 -> S30; còn lại -> S15 tab Tìm kèo
+  void openNotification(Map<String, dynamic> n) {
+    markNotificationRead(n);
+    final target = n['targetScreen']?.toString() ?? 'S06';
+    final refId = n['referenceId'];
+    final title = '${n['title'] ?? ''}'.toLowerCase();
+    if (n['type'] == 'CHAT' && refId != null) {
+      openMatch(refId, openChat: true);
+      return;
+    }
+    if (n['type'] == 'MATCHMAKING' && refId != null) {
+      final isRequest = title.contains('xin tham gia');
+      final isApproved = title.contains('duyệt bạn');
+      final isReviewInvite = title.contains('đánh giá chủ kèo');
+      if (target == 'S30' || isRequest || isApproved || isReviewInvite) {
+        openMatch(refId, focusRequests: isRequest, review: isReviewInvite);
+        return;
+      }
+      matchTab = 0;
+      goTo('S15');
+      return;
+    }
+    goTo(target);
   }
 
   /// Nạp tiền vào Ví (chỉ khi máy chủ bật chế độ demo). Lỗi -> ApiException.
@@ -461,6 +558,9 @@ class AppState extends ChangeNotifier {
   /// Đăng xuất: xóa phiên + token, giữ lại cài đặt trên máy (sân yêu thích, lịch sử tìm kiếm).
   Future<void> logout() async {
     _releaseAbandonedHold('S01');
+    _latestNotificationId = 0;
+    incomingNotification = null;
+    await PushService.instance.unregister(); // trước khi xoá token đăng nhập
     GoogleAuthService.signOut();
     ApiClient.instance.token = null;
     try {

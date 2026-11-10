@@ -8,4 +8,6 @@ public interface MatchMessageRepository extends JpaRepository<MatchMessage, Long
     List<MatchMessage> findTop100ByMatchIdOrderByIdDesc(Long matchId);
     List<MatchMessage> findByMatchIdAndIdGreaterThanOrderByIdAsc(Long matchId, Long afterId);
     long countByMatchId(Long matchId);
+    long countByMatchIdAndIdGreaterThanAndUserIdNot(Long matchId, Long afterId, Long userId);
+    java.util.Optional<MatchMessage> findTopByMatchIdOrderByIdDesc(Long matchId);
 }

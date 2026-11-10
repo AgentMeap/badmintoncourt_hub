@@ -30,6 +30,7 @@ class _S05NotificationsScreenState extends State<S05NotificationsScreen> {
     'PAYMENT': 'Thanh toán',
     'BOOKING': 'Đặt sân',
     'MATCHMAKING': 'Ghép kèo',
+    'CHAT': 'Tin nhắn',
   };
 
   static IconData _iconOf(String? type) {
@@ -40,35 +41,15 @@ class _S05NotificationsScreenState extends State<S05NotificationsScreen> {
         return Icons.event_available_outlined;
       case 'MATCHMAKING':
         return Icons.groups_outlined;
+      case 'CHAT':
+        return Icons.forum_outlined;
       default:
         return Icons.notifications_outlined;
     }
   }
 
-  /// Mở màn liên quan tới thông báo. Thông báo kèo có id kèo (referenceId) thì mở đúng kèo đó:
-  /// - "Có người xin tham gia" -> S30 của kèo, cuộn tới mục Đơn xin tham gia (chủ kèo duyệt)
-  /// - "Đã được duyệt" -> S30 của kèo (giờ chơi, sân, đồng đội)
-  /// - "Bị từ chối" -> S15 tab Tìm kèo để tìm kèo khác
-  void _open(Map<String, dynamic> n) {
-    final app = widget.appState;
-    app.markNotificationRead(n);
-    final target = n['targetScreen']?.toString() ?? 'S06';
-    final refId = n['referenceId'];
-    final title = '${n['title'] ?? ''}'.toLowerCase();
-    if (n['type'] == 'MATCHMAKING' && refId != null) {
-      final isRequest = title.contains('xin tham gia');
-      final isApproved = title.contains('duyệt bạn');
-      final isReviewInvite = title.contains('đánh giá chủ kèo');
-      if (target == 'S30' || isRequest || isApproved || isReviewInvite) {
-        app.openMatch(refId, focusRequests: isRequest, review: isReviewInvite);
-        return;
-      }
-      app.matchTab = 0;
-      app.goTo('S15');
-      return;
-    }
-    app.goTo(target);
-  }
+  /// Mở màn liên quan tới thông báo (logic chung ở [AppState.openNotification]).
+  void _open(Map<String, dynamic> n) => widget.appState.openNotification(n);
 
   /// Bỏ emoji ở đầu tiêu đề cũ (dữ liệu từ backend / dữ liệu mẫu) vì đã có icon riêng.
   static String _cleanTitle(String raw) =>

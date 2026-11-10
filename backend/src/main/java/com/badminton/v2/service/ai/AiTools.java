@@ -2,13 +2,19 @@ package com.badminton.v2.service.ai;
 
 import com.badminton.v2.entity.Booking;
 import com.badminton.v2.entity.Court;
+import com.badminton.v2.entity.MatchParticipant;
 import com.badminton.v2.entity.MatchPost;
+import com.badminton.v2.entity.User;
 import com.badminton.v2.entity.Venue;
 import com.badminton.v2.repository.BookingRepository;
 import com.badminton.v2.repository.CourtRepository;
+import com.badminton.v2.repository.MatchParticipantRepository;
 import com.badminton.v2.repository.MatchPostRepository;
+import com.badminton.v2.repository.UserRepository;
 import com.badminton.v2.repository.VenueRepository;
 import com.badminton.v2.service.BookingRules;
+import com.badminton.v2.service.HostReputationService;
+import com.badminton.v2.service.MatchDepositService;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
@@ -44,15 +50,21 @@ public class AiTools {
     private final CourtRepository courtRepository;
     private final BookingRepository bookingRepository;
     private final MatchPostRepository matchPostRepository;
+    private final MatchParticipantRepository participantRepository;
+    private final UserRepository userRepository;
 
     public AiTools(VenueRepository venueRepository,
                    CourtRepository courtRepository,
                    BookingRepository bookingRepository,
-                   MatchPostRepository matchPostRepository) {
+                   MatchPostRepository matchPostRepository,
+                   MatchParticipantRepository participantRepository,
+                   UserRepository userRepository) {
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.bookingRepository = bookingRepository;
         this.matchPostRepository = matchPostRepository;
+        this.participantRepository = participantRepository;
+        this.userRepository = userRepository;
     }
 
     // ------------------------------------------------------------------ Khai báo cho Gemini
@@ -76,14 +88,23 @@ public class AiTools {
                                 "durationHours", num("Số giờ chơi, 1-4, mặc định 2")
                         ), List.of("date")),
                 declare("find_matches",
-                        "Tìm kèo giao lưu đang tuyển người. Dùng khi hỏi kèo, ghép đội, tìm người chơi cùng.",
+                        "Tìm kèo giao lưu đang tuyển người (bỏ qua kèo người dùng đã xin hoặc tự tổ chức). "
+                                + "Mỗi kèo có mức cọc qua ví và uy tín chủ kèo (điểm, số đánh giá, huy hiệu TRUSTED). "
+                                + "Dùng khi hỏi kèo, ghép đội, tìm người chơi cùng, kèo không cọc, chủ kèo uy tín.",
                         props(
                                 "skill", str("Trình độ: NEWBIE, TB_YEU, TRUNG_BINH, KHA (để trống = theo hồ sơ người dùng)"),
-                                "date", str("Ngày yyyy-MM-dd hoặc 'today' / 'tomorrow' (tùy chọn)")
+                                "date", str("Ngày yyyy-MM-dd hoặc 'today' / 'tomorrow' (tùy chọn)"),
+                                "trustedOnly", bool("true = chỉ kèo của chủ kèo có huy hiệu Uy tín"),
+                                "maxDeposit", num("Số tiền cọc tối đa (VND); 0 = chỉ kèo không cần cọc")
                         ), List.of()),
+                declare("get_my_matches",
+                        "Kèo giao lưu của chính người đang hỏi: kèo tôi tổ chức (số đơn chờ duyệt) "
+                                + "và kèo tôi đã xin tham gia (trạng thái đơn, tiền cọc).",
+                        props(), List.of()),
                 declare("get_policy",
-                        "Chính sách của ứng dụng: hủy & hoàn tiền, đổi lịch, giữ chỗ & thanh toán.",
-                        props("topic", str("CANCEL, RESCHEDULE, PAYMENT hoặc ALL")), List.of()),
+                        "Chính sách của ứng dụng: hủy & hoàn tiền, đổi lịch, giữ chỗ & thanh toán, "
+                                + "cọc kèo giao lưu (hủy đơn / rời kèo được hoàn bao nhiêu).",
+                        props("topic", str("CANCEL, RESCHEDULE, PAYMENT, MATCH_DEPOSIT hoặc ALL")), List.of()),
                 declare("get_my_bookings",
                         "Vé sắp tới của chính người đang hỏi.",
                         props(), List.of())
@@ -113,6 +134,10 @@ public class AiTools {
         return Map.of("type", "NUMBER", "description", description);
     }
 
+    private static Map<String, Object> bool(String description) {
+        return Map.of("type", "BOOLEAN", "description", description);
+    }
+
     // ------------------------------------------------------------------ Thực thi
 
     public ToolResult execute(String name, Map<String, Object> args, Context ctx) {
@@ -123,7 +148,10 @@ public class AiTools {
                 case "check_availability" -> checkAvailability(
                         number(a.get("venueId")), text(a.get("keyword")), text(a.get("date")),
                         text(a.get("startTime")), number(a.get("durationHours")), ctx);
-                case "find_matches" -> findMatches(text(a.get("skill")), text(a.get("date")), ctx);
+                case "find_matches" -> findMatches(text(a.get("skill")), text(a.get("date")),
+                        Boolean.TRUE.equals(a.get("trustedOnly")) || "true".equalsIgnoreCase(text(a.get("trustedOnly"))),
+                        number(a.get("maxDeposit")), ctx);
+                case "get_my_matches" -> myMatches(ctx);
                 case "get_policy" -> policy(text(a.get("topic")));
                 case "get_my_bookings" -> myBookings(ctx);
                 default -> new ToolResult(Map.of("error", "Hàm không tồn tại: " + name), List.of());
@@ -245,6 +273,16 @@ public class AiTools {
     // ------------------------------------------------------------------ find_matches
 
     public ToolResult findMatches(String skill, String dateText, Context ctx) {
+        return findMatches(skill, dateText, false, null, ctx);
+    }
+
+    public ToolResult findMatches(String skill, String dateText, boolean trustedOnly, Double maxDeposit, Context ctx) {
+        Set<Long> requested = new HashSet<>();
+        if (ctx.userId() != null) {
+            for (MatchParticipant mp : participantRepository.findByUserIdOrderByIdDesc(ctx.userId())) {
+                requested.add(mp.getMatchId());
+            }
+        }
         String wanted = (skill == null || skill.isBlank()) ? ctx.skillLevel() : skill.trim().toUpperCase();
         LocalDate today = LocalDate.now();
         LocalDate onDate = (dateText == null || dateText.isBlank()) ? null : parseDate(dateText, today);
@@ -262,19 +300,13 @@ public class AiTools {
             if (wanted != null && !wanted.isBlank() && !"ALL".equalsIgnoreCase(m.getRequiredSkill())
                     && !wanted.equalsIgnoreCase(m.getRequiredSkill())) continue;
             if (ctx.userId() != null && ctx.userId().equals(m.getHostId())) continue;
+            if (requested.contains(m.getId())) continue; // đã xin rồi -> xem ở get_my_matches
+            double deposit = MatchDepositService.depositOf(m);
+            if (maxDeposit != null && deposit > maxDeposit + 1e-6) continue;
+            Map<String, Object> host = hostSummary(m.getHostId());
+            if (trustedOnly && !"TRUSTED".equals(host.get("badge"))) continue;
 
-            Map<String, Object> match = new LinkedHashMap<>();
-            match.put("id", m.getId());
-            match.put("title", m.getTitle());
-            match.put("venueName", m.getVenueName());
-            match.put("courtName", m.getCourtName());
-            match.put("playDate", m.getPlayDate());
-            match.put("startTime", m.getStartTime());
-            match.put("endTime", m.getEndTime());
-            match.put("requiredSkill", m.getRequiredSkill());
-            match.put("hostName", m.getHostName());
-            match.put("slotsLeft", m.getMaxPlayers() - m.getCurrentPlayers());
-            match.put("feePerPlayer", m.getFeePerPlayer());
+            Map<String, Object> match = matchRow(m, host);
             rows.add(match);
             cards.add(Map.of("type", "MATCH", "match", match,
                     "action", Map.of("type", "OPEN_MATCH", "matchId", m.getId())));
@@ -282,8 +314,79 @@ public class AiTools {
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("skillFilter", wanted == null ? "ALL" : wanted);
+        data.put("trustedOnly", trustedOnly);
+        if (maxDeposit != null) data.put("maxDeposit", maxDeposit);
         data.put("matches", rows);
         if (rows.isEmpty()) data.put("note", "Hiện không có kèo phù hợp, có thể tự tạo kèo ở mục Ghép kèo");
+        return new ToolResult(data, cards);
+    }
+
+    private Map<String, Object> hostSummary(Long hostId) {
+        return userRepository.findById(hostId).map(HostReputationService::summaryOf).orElseGet(LinkedHashMap::new);
+    }
+
+    /** Một dòng kèo cho mô hình + thẻ MATCH (kèm cọc và uy tín chủ kèo). */
+    private static Map<String, Object> matchRow(MatchPost m, Map<String, Object> host) {
+        Map<String, Object> match = new LinkedHashMap<>();
+        match.put("id", m.getId());
+        match.put("title", m.getTitle());
+        match.put("venueName", m.getVenueName());
+        match.put("courtName", m.getCourtName());
+        match.put("playDate", m.getPlayDate());
+        match.put("startTime", m.getStartTime());
+        match.put("endTime", m.getEndTime());
+        match.put("requiredSkill", m.getRequiredSkill());
+        match.put("hostName", m.getHostName());
+        match.put("slotsLeft", m.getMaxPlayers() - m.getCurrentPlayers());
+        match.put("feePerPlayer", m.getFeePerPlayer());
+        match.put("status", m.getStatus());
+        match.put("depositPercent", m.getDepositPercent() == null ? 0 : m.getDepositPercent());
+        match.put("depositAmount", MatchDepositService.depositOf(m));
+        match.put("host", host);
+        return match;
+    }
+
+    // ------------------------------------------------------------------ get_my_matches
+
+    public ToolResult myMatches(Context ctx) {
+        if (ctx.userId() == null) return new ToolResult(Map.of("error", "Chưa đăng nhập"), List.of());
+        List<Map<String, Object>> hosting = new ArrayList<>();
+        List<Map<String, Object>> joined = new ArrayList<>();
+        List<Map<String, Object>> cards = new ArrayList<>();
+        for (MatchPost m : matchPostRepository.findByHostIdOrderByIdDesc(ctx.userId())) {
+            if (!"OPEN".equals(m.getStatus()) && !"FULL".equals(m.getStatus())) continue;
+            Map<String, Object> row = matchRow(m, hostSummary(m.getHostId()));
+            long pending = participantRepository.findByMatchIdOrderByIdAsc(m.getId()).stream()
+                    .filter(p -> "PENDING".equals(p.getStatus())).count();
+            row.put("role", "HOST");
+            row.put("pendingCount", pending);
+            hosting.add(row);
+            if (cards.size() < 5) {
+                cards.add(Map.of("type", "MATCH", "match", row,
+                        "action", Map.of("type", "OPEN_MATCH", "matchId", m.getId())));
+            }
+        }
+        for (MatchParticipant mp : participantRepository.findByUserIdOrderByIdDesc(ctx.userId())) {
+            MatchPost m = matchPostRepository.findById(mp.getMatchId()).orElse(null);
+            if (m == null || (!"OPEN".equals(m.getStatus()) && !"FULL".equals(m.getStatus()))) continue;
+            Map<String, Object> row = matchRow(m, hostSummary(m.getHostId()));
+            row.put("role", "MEMBER");
+            row.put("myStatus", mp.getStatus());
+            row.put("myDeposit", mp.getDepositAmount() == null ? 0 : mp.getDepositAmount());
+            row.put("myDepositStatus", mp.getDepositStatus() == null ? "NONE" : mp.getDepositStatus());
+            if (mp.getRejectReason() != null) row.put("rejectReason", mp.getRejectReason());
+            joined.add(row);
+            if (cards.size() < 5) {
+                cards.add(Map.of("type", "MATCH", "match", row,
+                        "action", Map.of("type", "OPEN_MATCH", "matchId", m.getId())));
+            }
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("hosting", hosting);
+        data.put("joined", joined);
+        if (hosting.isEmpty() && joined.isEmpty()) {
+            data.put("note", "Người dùng chưa tổ chức hay xin vào kèo nào đang mở");
+        }
         return new ToolResult(data, cards);
     }
 
@@ -306,8 +409,17 @@ public class AiTools {
                     + " phút để thanh toán bằng Ví Cầu Lông hoặc VietQR (PayOS).");
             lines.add("Giờ vàng: từ " + BookingRules.PEAK_START_HOUR + ":00 ngày thường và cả ngày cuối tuần.");
         }
+        if (t.equals("ALL") || t.equals("MATCH_DEPOSIT") || t.equals("MATCH")) {
+            lines.add("Kèo giao lưu có cọc (50% / 100%): tiền cọc trừ ví ngay khi xin tham gia, "
+                    + "được giữ hộ và chỉ chuyển cho chủ kèo sau khi kèo kết thúc.");
+            lines.add("Hoàn đủ cọc khi: bị từ chối, tự hủy đơn chưa duyệt, bị chủ kèo mời ra hoặc chủ kèo hủy kèo.");
+            lines.add("Đã được duyệt mà tự rời kèo: còn từ 24 tiếng hoàn 100%; 2 - 24 tiếng hoàn 50% "
+                    + "(50% cho chủ kèo); dưới 2 tiếng mất cọc.");
+        }
         if (lines.isEmpty()) return policy("ALL");
-        Map<String, Object> card = Map.of("type", "POLICY", "title", "Chính sách đặt sân", "lines", lines);
+        String title = t.equals("MATCH_DEPOSIT") || t.equals("MATCH") ? "Chính sách cọc kèo giao lưu"
+                : t.equals("ALL") ? "Chính sách đặt sân & kèo giao lưu" : "Chính sách đặt sân";
+        Map<String, Object> card = Map.of("type", "POLICY", "title", title, "lines", lines);
         return new ToolResult(Map.of("policy", lines), List.of(card));
     }
 

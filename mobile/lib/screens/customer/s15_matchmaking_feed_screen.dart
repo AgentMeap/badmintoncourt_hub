@@ -245,6 +245,20 @@ class _S15MatchmakingFeedScreenState extends State<S15MatchmakingFeedScreen> {
                         ],
                       ),
                     ),
+                    if (UiFmt.toNum(entry['unreadMessages'], 0) > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: cs.error, borderRadius: BorderRadius.circular(999)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.forum_outlined, size: 14, color: cs.onError),
+                            const SizedBox(width: 4),
+                            Text('${UiFmt.toNum(entry['unreadMessages'], 0).toInt()} tin mới',
+                                style: theme.textTheme.labelMedium?.copyWith(color: cs.onError, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                     if (MatchDeposit.label(post) != null)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

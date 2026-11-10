@@ -17,6 +17,10 @@ class FirebaseConfig {
   /// để Google trả về ID token mà Firebase chấp nhận.
   static const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
 
+  /// Đủ cấu hình để khởi tạo Firebase (thông báo đẩy), chưa cần Web client ID của đăng nhập Google.
+  static bool get hasCoreOptions =>
+      apiKey.isNotEmpty && appId.isNotEmpty && messagingSenderId.isNotEmpty && projectId.isNotEmpty;
+
   static bool get isComplete =>
       apiKey.isNotEmpty &&
       appId.isNotEmpty &&

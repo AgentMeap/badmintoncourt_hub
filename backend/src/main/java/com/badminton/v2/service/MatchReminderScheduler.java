@@ -21,7 +21,7 @@ import java.util.Set;
  * <ul>
  *   <li>Nhắc lịch: khoảng 2 giờ trước giờ đánh, báo chủ kèo + thành viên đã duyệt (mở S30). Mỗi kèo nhắc một lần.</li>
  *   <li>Đóng kèo: kèo OPEN / FULL đã qua giờ kết thúc chuyển sang COMPLETED, không còn trên bảng tin;
- *       tiền cọc đang giữ hộ được chuyển cho chủ kèo (đơn chưa duyệt thì hoàn lại); mời thành viên đánh giá chủ kèo.</li>
+ *   <li>(đóng kèo) tiền cọc đang giữ hộ được chuyển cho chủ kèo (đơn chưa duyệt thì hoàn lại); mời thành viên đánh giá chủ kèo.</li>
  * </ul>
  */
 @Component

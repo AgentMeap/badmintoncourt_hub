@@ -26,6 +26,8 @@ public class MatchSchemaGuard {
         try {
             jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_match_participant_user "
                     + "ON match_participants(match_id, user_id)");
+            jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_match_chat_read_user "
+                    + "ON match_chat_reads(match_id, user_id)");
         } catch (Exception e) {
             // Dữ liệu cũ đang có bản trùng: vẫn chạy bình thường, kiểm tra trong code vẫn chặn trùng
             log.warn("Không tạo được unique index match_participants(match_id, user_id): {}", e.getMessage());

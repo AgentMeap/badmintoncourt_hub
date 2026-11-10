@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:badminton_v2_mobile/core/api/json.dart';
+import 'package:badminton_v2_mobile/core/match_deposit.dart';
 import 'package:badminton_v2_mobile/core/ui_kit.dart';
+import 'package:badminton_v2_mobile/screens/customer/host_reputation.dart';
 
 /// Các thẻ tương tác trong câu trả lời của Trợ lý AI (S17).
 /// Thẻ được máy chủ dựng từ dữ liệu thật (kết quả hàm tra cứu), app chỉ hiển thị:
@@ -203,6 +205,21 @@ class _MatchCard extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final id = match['id'];
+    final deposit = MatchDeposit.label(match);
+    final role = match['role'];
+    // Kèo của tôi: tôi tổ chức (số đơn chờ duyệt) hoặc tôi đã xin (trạng thái đơn)
+    final String? mine = role == 'HOST'
+        ? (UiFmt.toNum(match['pendingCount'], 0) > 0
+            ? 'Bạn tổ chức • ${UiFmt.toNum(match['pendingCount'], 0).toInt()} đơn chờ duyệt'
+            : 'Bạn tổ chức • chưa có đơn mới')
+        : role == 'MEMBER'
+            ? switch (match['myStatus']) {
+                'APPROVED' => 'Bạn đã được duyệt',
+                'REJECTED' => 'Chủ kèo chưa nhận bạn',
+                'REMOVED' => 'Bạn đã bị mời ra',
+                _ => 'Đơn của bạn đang chờ duyệt',
+              }
+            : null;
     return SurfaceCard(
       padding: const EdgeInsets.all(12),
       onTap: id == null ? null : () => onOpen(id),
@@ -234,6 +251,14 @@ class _MatchCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(color: cs.tertiary, fontWeight: FontWeight.w700),
                 ),
+                if (deposit != null)
+                  Text(deposit,
+                      style: theme.textTheme.labelMedium?.copyWith(color: cs.secondary, fontWeight: FontWeight.w700)),
+                if (mine != null)
+                  Text(mine,
+                      style: theme.textTheme.labelMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w700))
+                else if (match['host'] is Map)
+                  HostReputation.summaryRow(theme, match['host'] as Map),
               ],
             ),
           ),

@@ -19,6 +19,8 @@ import 'package:badminton_v2_mobile/screens/customer/match_chat_sheet.dart';
 // - Chủ kèo + thành viên đã duyệt: nhóm chat của kèo. Chủ kèo có thể hủy cả kèo (báo cho mọi người).
 // - Uy tín chủ kèo: điểm + huy hiệu (bấm để xem hồ sơ); kèo kết thúc thì thành viên đã duyệt đánh giá chủ kèo
 //   (mở từ thông báo "Đánh giá chủ kèo" thì tự bật bảng đánh giá).
+// - Thành viên đã duyệt tự rời kèo (hoàn cọc theo mốc 24h / 2h lúc rời); chủ kèo mời ra thì chọn hoàn đủ / theo chính sách.
+// - Nhóm chat có số tin chưa đọc; mở từ thông báo tin nhắn thì tự mở khung chat.
 // - Kèo có cọc: xác nhận số cọc trước khi xin, hộp thoại rời kèo hiện số tiền được hoàn, dòng trạng thái cọc.
 // - Kèo đã hủy / đã kết thúc: hiện thông báo ở đầu, ẩn các nút thao tác (vẫn xem lại được nhóm chat).
 class S30MatchDetailScreen extends StatefulWidget {
@@ -38,6 +40,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
   bool _joining = false;
   bool _focusRequests = false;
   bool _openReview = false;
+  bool _openChat = false;
   /// Kèo đã hủy / đã kết thúc (tính lại mỗi lần build) -> ẩn nút duyệt, mời ra, rời kèo.
   bool _closed = false;
   final Set<String> _busy = {};
@@ -52,6 +55,8 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     _focusRequests = _app.openMatchFocusRequests;
     _openReview = _app.openMatchReview;
     _app.openMatchReview = false;
+    _openChat = _app.openMatchChat;
+    _app.openMatchChat = false;
     _loading = _matchId != null;
     _app.openMatchId = null;
     _app.openMatchFocusRequests = false;
@@ -73,6 +78,14 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
         _gone = false;
         _loading = false;
       });
+      if (_openChat) {
+        _openChat = false;
+        if (fresh['canChat'] == true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _openChatSheet();
+          });
+        }
+      }
       if (_openReview) {
         _openReview = false;
         if (fresh['canReviewHost'] == true) {
@@ -209,19 +222,81 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     }
   }
 
-  /// Chủ kèo mời một thành viên đã duyệt ra khỏi kèo.
+  /// Hộp thoại chọn cách hoàn cọc khi mời thành viên ra: trả về 'FULL' / 'POLICY', null nếu huỷ.
+  Future<String?> _askRefundMode(Json post, Json part, {required String title, required String defaultMode,
+      required String confirmLabel}) async {
+    Json preview;
+    try {
+      preview = await Repos.match.removePreview(post['id'], part['id']);
+    } catch (e) {
+      if (mounted) showApiError(context, e);
+      return null;
+    }
+    if (!mounted) return null;
+    final deposit = UiFmt.toNum(preview['deposit'], 0);
+    if (deposit <= 0) {
+      // Kèo không cọc: chỉ cần xác nhận
+      final ok = await confirmAction(context,
+          title: title, message: 'Chỗ của ${part['userName']} sẽ được trả lại cho kèo.', confirmLabel: confirmLabel);
+      return ok ? defaultMode : null;
+    }
+    final full = UiFmt.toNum(preview['fullRefund'], 0);
+    final policy = UiFmt.toNum(preview['policyRefund'], 0);
+    var mode = defaultMode;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${part['userName']} đã cọc ${UiFmt.vnd(deposit)}. Chọn cách hoàn cọc:'),
+              const SizedBox(height: 8),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                value: 'POLICY',
+                groupValue: mode,
+                onChanged: (v) => setLocal(() => mode = v!),
+                title: Text('Theo chính sách: hoàn ${UiFmt.vnd(policy)}'),
+                subtitle: Text(
+                    'Tính theo thời gian còn lại tới giờ đánh${deposit - policy > 0 ? ', bạn nhận ${UiFmt.vnd(deposit - policy)}' : ''}'),
+              ),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                value: 'FULL',
+                groupValue: mode,
+                onChanged: (v) => setLocal(() => mode = v!),
+                title: Text('Hoàn đủ ${UiFmt.vnd(full)}'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, mode), child: Text(confirmLabel)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Chủ kèo mời một thành viên đã duyệt ra khỏi kèo (người đó không xin lại được kèo này).
   Future<void> _remove(Json post, Json part) async {
     final key = '${part['id']}';
     if (_busy.contains(key)) return;
     final reason = await _askReason(
       title: 'Mời ${part['userName']} ra khỏi kèo?',
-      confirmLabel: 'Mời ra',
+      confirmLabel: 'Tiếp tục',
       hint: 'VD: Đổi đội hình',
     );
     if (reason == null || !mounted) return;
+    final mode = await _askRefundMode(post, part,
+        title: 'Mời ${part['userName']} ra', defaultMode: 'FULL', confirmLabel: 'Mời ra');
+    if (mode == null || !mounted) return;
     setState(() => _busy.add(key));
     try {
-      final res = await Repos.match.removeParticipant(post['id'], part['id'], reason: reason);
+      final res = await Repos.match.removeParticipant(post['id'], part['id'], reason: reason, refundMode: mode);
       if (!mounted) return;
       setState(() {
         _busy.remove(key);
@@ -236,11 +311,9 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     }
   }
 
-  /// Người xin hủy đơn đang chờ, hoặc thành viên rời kèo.
-  Future<void> _leave(Json post, String status) async {
-    final approved = status == 'APPROVED';
-    // Hiện trước số tiền cọc được hoàn (lấy từ máy chủ)
-    final ok = await MatchDeposit.confirmLeave(context, post, approved: approved);
+  /// Người xin hủy đơn đang chờ duyệt (hoàn đủ cọc).
+  Future<void> _cancelPending(Json post) async {
+    final ok = await MatchDeposit.confirmLeave(context, post, approved: false);
     if (!ok || !mounted) return;
     setState(() => _joining = true);
     try {
@@ -252,14 +325,45 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
       });
       final refunded = UiFmt.toNum(res['refundedAmount'], 0);
       if (MatchDeposit.amountOf(post) > 0) _app.refreshWallet();
-      _snack('${approved ? 'Bạn đã rời kèo' : 'Đã hủy đơn xin tham gia'}'
-          '${refunded > 0 ? '. Đã hoàn ${UiFmt.vnd(refunded)} vào ví' : ''}');
+      _snack('Đã hủy đơn xin tham gia${refunded > 0 ? '. Đã hoàn ${UiFmt.vnd(refunded)} vào ví' : ''}');
     } catch (e) {
       if (!mounted) return;
       setState(() => _joining = false);
       showApiError(context, e);
       _refresh();
     }
+  }
+
+  /// Thành viên đã duyệt tự rời kèo ngay (hộp thoại hiện số tiền được hoàn lấy từ máy chủ).
+  Future<void> _leaveNow(Json post) async {
+    final ok = await MatchDeposit.confirmLeave(context, post, approved: true);
+    if (!ok || !mounted) return;
+    setState(() => _joining = true);
+    try {
+      final res = await Repos.match.leave(post['id']);
+      if (!mounted) return;
+      setState(() {
+        _joining = false;
+        _apply(asJson(res['entry']));
+      });
+      final refunded = UiFmt.toNum(res['refundedAmount'], 0);
+      if (MatchDeposit.amountOf(post) > 0) _app.refreshWallet();
+      _snack('Bạn đã rời kèo${refunded > 0 ? '. Đã hoàn ${UiFmt.vnd(refunded)} vào ví' : ''}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _joining = false);
+      showApiError(context, e);
+      _refresh();
+    }
+  }
+
+  /// Mở nhóm chat; đóng lại thì tải lại kèo để cập nhật số tin chưa đọc.
+  Future<void> _openChatSheet() async {
+    final entry = _entry;
+    if (entry == null) return;
+    final post = asJson(entry['post']);
+    await showMatchChatSheet(context, matchId: post['id'], title: post['title']?.toString() ?? 'Kèo giao lưu');
+    if (mounted) _refresh();
   }
 
   /// Chủ kèo hủy cả kèo (lý do không bắt buộc), mọi người đã xin / đã vào nhận thông báo.
@@ -302,6 +406,8 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     required String title,
     required String confirmLabel,
     String hint = 'VD: Kèo cần trình độ khá hơn',
+    String note = 'Lý do sẽ được gửi kèm thông báo (không bắt buộc).',
+    bool destructive = true,
   }) async {
     final ctrl = TextEditingController();
     final result = await showDialog<String>(
@@ -312,16 +418,16 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Lý do sẽ được gửi kèm thông báo (không bắt buộc).'),
+            Text(note),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               maxLength: 200,
               minLines: 1,
               maxLines: 3,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: hint,
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -329,10 +435,12 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-              foregroundColor: Theme.of(ctx).colorScheme.onError,
-            ),
+            style: destructive
+                ? FilledButton.styleFrom(
+                    backgroundColor: Theme.of(ctx).colorScheme.error,
+                    foregroundColor: Theme.of(ctx).colorScheme.onError,
+                  )
+                : null,
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: Text(confirmLabel),
           ),
@@ -501,19 +609,19 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
             style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant))
       else
         for (final p in approved)
-          _personTile(theme, p,
-              trailing: Row(children: [
-                Icon(Icons.check_circle, size: 18, color: cs.primary),
-                const SizedBox(width: 6),
-                Expanded(child: Text('Đã duyệt', style: theme.textTheme.labelLarge?.copyWith(color: cs.primary))),
-                if (!_closed)
-                TextButton.icon(
-                  onPressed: _busy.contains('${p['id']}') ? null : () => _remove(post, p),
-                  style: TextButton.styleFrom(foregroundColor: cs.error, minimumSize: const Size(0, 40)),
-                  icon: const Icon(Icons.person_remove_outlined, size: 18),
-                  label: const Text('Mời ra'),
-                ),
-              ])),
+            _personTile(theme, p,
+                trailing: Row(children: [
+                  Icon(Icons.check_circle, size: 18, color: cs.primary),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text('Đã duyệt', style: theme.textTheme.labelLarge?.copyWith(color: cs.primary))),
+                  if (!_closed)
+                    TextButton.icon(
+                      onPressed: _busy.contains('${p['id']}') ? null : () => _remove(post, p),
+                      style: TextButton.styleFrom(foregroundColor: cs.error, minimumSize: const Size(0, 40)),
+                      icon: const Icon(Icons.person_remove_outlined, size: 18),
+                      label: const Text('Mời ra'),
+                    ),
+                ])),
       if (rejected.isNotEmpty)
         Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
@@ -564,16 +672,20 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
         const SizedBox(height: 16),
         SectionHeader('Đồng đội (${teammates.length})'),
         for (final p in teammates) _personTile(theme, p),
-        if (!_closed)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _joining ? null : () => _leave(post, 'APPROVED'),
-            style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
-            icon: const Icon(Icons.logout, size: 18),
-            label: const Text('Rời kèo'),
+        if (!_closed) ...[
+          const SizedBox(height: 8),
+          Text('Không đi được? Bạn có thể rời kèo, tiền cọc hoàn theo thời gian còn lại tới giờ đánh.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _joining ? null : () => _leaveNow(post),
+              style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text('Rời kèo'),
+            ),
           ),
-        ),
+        ],
       ] else if (status == 'REJECTED' || status == 'REMOVED') ...[
         NoteBox(
           '${status == 'REMOVED' ? 'Chủ kèo đã mời bạn ra khỏi kèo này.' : 'Chủ kèo chưa nhận bạn vào kèo này.'}'
@@ -596,7 +708,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
         if (!_closed) ...[
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: _joining ? null : () => _leave(post, 'PENDING'),
+          onPressed: _joining ? null : () => _cancelPending(post),
           style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
           icon: const Icon(Icons.undo, size: 18),
           label: const Text('Hủy đơn'),
@@ -811,6 +923,7 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
     _closed = status == 'CANCELLED' || status == 'COMPLETED';
     final canChat = entry['canChat'] == true || isHost || myStatus == 'APPROVED';
     final messageCount = UiFmt.toNum(entry['messageCount'], 0).toInt();
+    final unread = UiFmt.toNum(entry['unreadMessages'], 0).toInt();
 
     return Column(
       children: [
@@ -940,11 +1053,18 @@ class _S30MatchDetailScreenState extends State<S30MatchDetailScreen> {
                   if (canChat) ...[
                     const SizedBox(height: 12),
                     FilledButton.tonalIcon(
-                      onPressed: () => showMatchChatSheet(context,
-                          matchId: post['id'], title: post['title']?.toString() ?? 'Kèo giao lưu'),
+                      onPressed: _openChatSheet,
                       style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-                      icon: const Icon(Icons.forum_outlined),
-                      label: Text(messageCount > 0 ? 'Nhóm chat ($messageCount tin)' : 'Mở nhóm chat'),
+                      icon: Badge(
+                        isLabelVisible: unread > 0,
+                        label: Text('$unread'),
+                        child: Icon(entry['chatMuted'] == true ? Icons.notifications_off_outlined : Icons.forum_outlined),
+                      ),
+                      label: Text(unread > 0
+                          ? 'Nhóm chat ($unread tin mới)'
+                          : messageCount > 0
+                              ? 'Nhóm chat ($messageCount tin)'
+                              : 'Mở nhóm chat'),
                     ),
                   ],
 

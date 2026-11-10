@@ -24,6 +24,8 @@ dependencies:
   # Đăng nhập Google qua Firebase Auth (chỉ Android). Cấu hình: mobile/config/README_FIREBASE.md
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0
+  # Thông báo đẩy (FCM) khi app chạy nền / đã đóng. Backend cần file service account (xem backend/application-secret.example.properties)
+  firebase_messaging: ^16.4.3
   google_sign_in: ^7.2.0
   # Nút micro ở Trợ lý AI (S17): nhận dạng giọng nói tiếng Việt có sẵn trên máy
   speech_to_text: ^7.3.0

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'app/app_shell.dart';
 import 'app/app_theme.dart';
 import 'core/app_state.dart';
+import 'core/push/push_service.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  PushService.registerBackgroundHandler(); // thông báo đẩy khi app chạy nền / đã đóng (Android)
   runApp(const BadmintonV2App());
 }
 

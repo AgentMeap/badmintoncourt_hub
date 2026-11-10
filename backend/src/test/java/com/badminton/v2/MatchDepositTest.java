@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Cọc kèo giao lưu qua ví: trừ khi xin, hoàn khi bị từ chối / tự hủy / bị mời ra / chủ kèo hủy,
- * hoàn theo mốc 24h – 2h khi rời kèo, trả chủ kèo khi kèo kết thúc (không trả 2 lần).
+ * hoàn theo mốc 24h – 2h khi tự rời kèo, trả chủ kèo khi kèo kết thúc (không trả 2 lần).
  */
 class MatchDepositTest extends IntegrationTestBase {
 
@@ -153,8 +153,8 @@ class MatchDepositTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("Rời kèo đã duyệt: ≥24h hoàn đủ, 2–24h hoàn 50% (50% cho chủ kèo), <2h mất cọc")
-    void leaveRefundTiers() throws Exception {
+    @DisplayName("Thành viên tự rời kèo: ≥24h hoàn đủ, 2–24h hoàn 50% (50% cho chủ kèo), <2h mất cọc")
+    void selfLeaveRefundTiers() throws Exception {
         record Case(long hours, double refund, double toHost) {}
         for (Case c : new Case[]{new Case(48, 40_000, 0), new Case(5, 20_000, 20_000), new Case(1, 0, 40_000)}) {
             User host = newUser("CUSTOMER", 0);
@@ -172,6 +172,20 @@ class MatchDepositTest extends IntegrationTestBase {
             assertEquals(c.refund(), balance(a), "ví người rời " + c);
             assertEquals(c.toHost(), balance(host), "ví chủ kèo " + c);
         }
+    }
+
+    @Test
+    @DisplayName("Chủ kèo mời ra: mặc định hoàn đủ, chọn 'theo chính sách' thì áp mốc giờ")
+    void removeWithPolicy() throws Exception {
+        User host = newUser("CUSTOMER", 0);
+        User a = newUser("CUSTOMER", 40_000);
+        long id = createMatch(host, 100, 40_000, 5); // 2–24h -> 50%
+        long pid = join(a, id);
+        review(host, id, pid, "APPROVED");
+        mvc.perform(postAs(tokenOf(host), Map.of("refundMode", "POLICY"), "/api/matches/{m}/participants/{p}/remove", id, pid))
+                .andExpect(status().isOk());
+        assertEquals(20_000, balance(a));
+        assertEquals(20_000, balance(host));
     }
 
     @Test

@@ -19,6 +19,7 @@ Future<void> showMatchChatSheet(BuildContext context, {required Object matchId, 
 }
 
 /// Nhóm chat của kèo. Tải 100 tin gần nhất, sau đó cứ 4 giây hỏi tin mới (afterId) khi bảng đang mở.
+/// Đang mở chat thì máy chủ không gửi thông báo tin mới cho mình; có vạch "Tin chưa đọc" và nút tắt thông báo nhóm.
 class MatchChatSheet extends StatefulWidget {
   final Object matchId;
   final String title;
@@ -39,6 +40,10 @@ class _MatchChatSheetState extends State<MatchChatSheet> {
   bool _sending = false;
   bool _closed = false;
   bool _polling = false;
+  bool _muted = false;
+  bool _savingMute = false;
+  /// Id tin đã đọc trước khi mở chat (để vẽ vạch "Tin chưa đọc").
+  int _lastReadBefore = 0;
   String? _error;
 
   @override
@@ -66,6 +71,8 @@ class _MatchChatSheetState extends State<MatchChatSheet> {
           ..clear()
           ..addAll(asJsonList(res['items']));
         _closed = res['closed'] == true;
+        _muted = res['muted'] == true;
+        _lastReadBefore = UiFmt.toNum(res['lastReadBefore'], 0).toInt();
         _loading = false;
         _error = null;
       });
@@ -122,6 +129,42 @@ class _MatchChatSheetState extends State<MatchChatSheet> {
       setState(() => _sending = false);
       showApiError(context, e);
     }
+  }
+
+  Future<void> _toggleMute() async {
+    if (_savingMute) return;
+    final next = !_muted;
+    setState(() => _savingMute = true);
+    try {
+      await Repos.match.setChatMuted(widget.matchId, next);
+      if (!mounted) return;
+      setState(() {
+        _muted = next;
+        _savingMute = false;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(next ? 'Đã tắt thông báo của nhóm này' : 'Đã bật thông báo của nhóm này'),
+        ));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingMute = false);
+      showApiError(context, e);
+    }
+  }
+
+  /// Vạch "Tin chưa đọc" đặt trước tin đầu tiên (của người khác) mới hơn lần đọc trước.
+  bool _isFirstUnread(int i) {
+    if (_lastReadBefore <= 0) return false;
+    final id = UiFmt.toNum(_items[i]['id'], 0).toInt();
+    if (id <= _lastReadBefore || _items[i]['mine'] == true) return false;
+    for (var k = 0; k < i; k++) {
+      final prev = UiFmt.toNum(_items[k]['id'], 0).toInt();
+      if (prev > _lastReadBefore && _items[k]['mine'] != true) return false;
+    }
+    return true;
   }
 
   void _jumpToEnd() {
@@ -230,7 +273,27 @@ class _MatchChatSheetState extends State<MatchChatSheet> {
         itemBuilder: (_, i) {
           final m = _items[i];
           final showName = i == 0 || '${_items[i - 1]['userId']}' != '${m['userId']}';
-          return _bubble(theme, m, showName);
+          if (!_isFirstUnread(i)) return _bubble(theme, m, showName);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(child: Divider(color: cs.primary)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('Tin chưa đọc',
+                          style: theme.textTheme.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w700)),
+                    ),
+                    Expanded(child: Divider(color: cs.primary)),
+                  ],
+                ),
+              ),
+              _bubble(theme, m, true),
+            ],
+          );
         },
       );
     }
@@ -255,6 +318,12 @@ class _MatchChatSheetState extends State<MatchChatSheet> {
                   ],
                 ),
               ),
+              if (!_loading && _error == null)
+                IconButton(
+                  tooltip: _muted ? 'Bật thông báo nhóm' : 'Tắt thông báo nhóm',
+                  onPressed: _savingMute ? null : _toggleMute,
+                  icon: Icon(_muted ? Icons.notifications_off_outlined : Icons.notifications_active_outlined),
+                ),
               IconButton(
                 tooltip: 'Đóng',
                 onPressed: () => Navigator.of(context).maybePop(),

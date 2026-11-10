@@ -66,11 +66,21 @@ class MatchRepository {
   Future<Json> sendMessage(Object matchId, String content) async =>
       asJson(await _api.post('/matches/$matchId/messages', {'content': content}));
 
-  /// Chủ kèo mời một thành viên đã duyệt ra khỏi kèo ([reason] tuỳ chọn). Trả về `{post, participant, entry}`.
-  Future<Json> removeParticipant(Object matchId, Object participantId, {String? reason}) async =>
+  /// Chủ kèo mời một thành viên đã duyệt ra khỏi kèo ([reason] tuỳ chọn).
+  /// [refundMode]: `FULL` (hoàn đủ cọc, mặc định) hoặc `POLICY` (theo mốc 24h / 2h). Trả về `{post, participant, entry}`.
+  Future<Json> removeParticipant(Object matchId, Object participantId, {String? reason, String refundMode = 'FULL'}) async =>
       asJson(await _api.post('/matches/$matchId/participants/$participantId/remove', {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        'refundMode': refundMode,
       }));
+
+  /// Số tiền hoàn nếu chủ kèo mời thành viên ra: `{deposit, fullRefund, policyRefund}`.
+  Future<Json> removePreview(Object matchId, Object participantId) async =>
+      asJson(await _api.get('/matches/$matchId/participants/$participantId/remove-preview'));
+
+  /// Tắt / bật thông báo nhóm chat của kèo.
+  Future<Json> setChatMuted(Object matchId, bool muted) async =>
+      asJson(await _api.patch('/matches/$matchId/chat-settings', {'muted': muted}));
 }
 
 /// Thông báo (`/api/notifications`).
@@ -87,6 +97,9 @@ class NotificationRepository {
     }
     return items;
   }
+
+  /// Nhẹ, cho app hỏi định kỳ: `{unreadCount, latestId}` (latestId tăng = có thông báo mới).
+  Future<Json> unreadCount(int userId) async => asJson(await _api.get('/notifications/user/$userId/unread-count'));
 
   Future<void> markRead(Object notificationId) => _api.patch('/notifications/$notificationId/read');
 
@@ -127,4 +140,17 @@ class AiRepository {
 
   /// Bắt đầu cuộc trò chuyện mới (đóng phiên cũ).
   Future<Json> newSession() async => asJson(await _api.post('/ai/sessions'));
+}
+
+/// Mã thiết bị cho thông báo đẩy (`/api/devices`).
+class DeviceRepository {
+  DeviceRepository([ApiClient? api]) : _api = api ?? ApiClient.instance;
+  final ApiClient _api;
+
+  /// Gửi mã FCM của máy này cho tài khoản đang đăng nhập. Trả về `{registered, pushEnabled}`.
+  Future<Json> register(String token, {String platform = 'ANDROID'}) async =>
+      asJson(await _api.post('/devices', {'token': token, 'platform': platform}));
+
+  /// Bỏ mã FCM (khi đăng xuất).
+  Future<Json> unregister(String token) async => asJson(await _api.post('/devices/unregister', {'token': token}));
 }

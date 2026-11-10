@@ -8,8 +8,8 @@ import 'package:badminton_v2_mobile/core/ui_kit.dart';
 class MatchDeposit {
   MatchDeposit._();
 
-  static const policyText = 'Hoàn cọc: bị từ chối / tự hủy đơn / chủ kèo hủy kèo → hoàn đủ. '
-      'Đã được duyệt mà rời kèo: còn từ 24 giờ → hoàn đủ; 2–24 giờ → hoàn 50%; dưới 2 giờ → mất cọc.';
+  static const policyText = 'Hoàn cọc: bị từ chối / tự hủy đơn khi chưa duyệt / chủ kèo hủy kèo → hoàn đủ. '
+      'Đã được duyệt mà tự rời kèo: còn từ 24 giờ → hoàn đủ; 2–24 giờ → hoàn 50%; dưới 2 giờ → mất cọc.';
 
   /// Giống backend: phí × % rồi làm tròn lên bội số 1.000đ.
   static double amountFor(double fee, int percent) {
@@ -123,7 +123,7 @@ class MatchDeposit {
     return true;
   }
 
-  /// Hỏi lại trước khi hủy đơn / rời kèo, kèm số tiền cọc được hoàn lấy từ máy chủ.
+  /// Hỏi lại trước khi hủy đơn chờ duyệt / tự rời kèo, kèm số tiền cọc được hoàn lấy từ máy chủ.
   static Future<bool> confirmLeave(BuildContext context, Map post, {required bool approved}) async {
     Json? preview;
     if (amountOf(post) > 0) {

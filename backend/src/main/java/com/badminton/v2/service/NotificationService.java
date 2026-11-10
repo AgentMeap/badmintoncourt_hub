@@ -13,10 +13,12 @@ import java.util.Optional;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final PushService pushService;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public NotificationService(NotificationRepository notificationRepository) {
+    public NotificationService(NotificationRepository notificationRepository, PushService pushService) {
         this.notificationRepository = notificationRepository;
+        this.pushService = pushService;
     }
 
     public NotificationItem notifyUser(Long userId, String title, String body, String type, String targetScreen, Long referenceId) {
@@ -31,7 +33,9 @@ public class NotificationService {
                 false,
                 LocalDateTime.now().format(FMT)
         );
-        return notificationRepository.save(item);
+        NotificationItem saved = notificationRepository.save(item);
+        pushService.pushAsync(saved); // thông báo đẩy về điện thoại (nếu đã cấu hình FCM)
+        return saved;
     }
 
     public List<NotificationItem> getUserNotifications(Long userId) {
@@ -40,6 +44,11 @@ public class NotificationService {
 
     public long getUnreadCount(Long userId) {
         return notificationRepository.countByUserIdAndIsReadFalse(userId);
+    }
+
+    /** Id thông báo mới nhất của người dùng (0 nếu chưa có). */
+    public long latestId(Long userId) {
+        return notificationRepository.findTopByUserIdOrderByIdDesc(userId).map(NotificationItem::getId).orElse(0L);
     }
 
     public Optional<NotificationItem> find(Long id) {

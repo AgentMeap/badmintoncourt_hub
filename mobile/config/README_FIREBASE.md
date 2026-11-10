@@ -1,7 +1,8 @@
 # Cấu hình đăng nhập Google (Firebase) – chỉ Android
 
-App không dùng `google-services.json` / plugin Gradle. Cấu hình Firebase được truyền lúc chạy
-bằng `--dart-define-from-file`, backend chỉ cần biết Project ID.
+Đăng nhập Google dùng cấu hình truyền lúc chạy bằng `--dart-define-from-file`.
+Thông báo đẩy (mục 5) cần thêm `android/app/google-services.json`: có file này thì Gradle tự bật plugin
+google-services; không có thì app vẫn build và chạy bình thường, chỉ không nhận được thông báo khi app đã đóng.
 
 ## 1. Firebase Console
 
@@ -61,3 +62,28 @@ Backend tự tải khóa công khai của Google để kiểm tra Firebase ID to
 - Bấm chọn tài khoản xong báo "Đã hủy" ngay: thường do **thiếu SHA-1** hoặc **sai Web client ID**.
 - Backend trả 503: chưa đặt `FIREBASE_PROJECT_ID`.
 - Backend trả 401 "Phiên đăng nhập Google không hợp lệ": Project ID của backend khác project của app.
+
+## 5. Thông báo đẩy (Firebase Cloud Messaging)
+
+Thông báo (duyệt đơn, tin nhắn nhóm, nhắc lịch, hoàn cọc...) hiện trên điện thoại kể cả khi app đã đóng.
+
+**Mobile (Android):**
+1. Chép `google-services.json` (Project settings → Your apps → Android `com.badminton.badminton_v2_mobile`)
+   vào `mobile/android/app/` – file đã nằm trong `.gitignore`.
+2. `flutter pub get` rồi chạy như mục 3. Lần đầu đăng nhập, app hỏi quyền hiện thông báo (Android 13+) → **Cho phép**.
+3. Máy ảo phải dùng image có **Google Play**; dễ nhất là thử trên điện thoại thật.
+
+**Backend:**
+1. Firebase Console → **Project settings → Service accounts → Generate new private key** → lưu thành
+   `backend/firebase-service-account.json` (đã nằm trong `.gitignore`, **không commit**, không gửi cho ai).
+2. Trong `backend/application-secret.properties`:
+   ```properties
+   app.fcm.credentials-file=./firebase-service-account.json
+   ```
+3. Khởi động lại backend; log có dòng `FCM đã bật cho project ...`. Để trống thì backend tắt thông báo đẩy
+   (app vẫn có banner thông báo khi đang mở, hỏi máy chủ 30 giây/lần).
+
+**Cách hoạt động:** đăng nhập → app gửi mã thiết bị lên `POST /api/devices`; mỗi thông báo backend tạo ra đều được
+đẩy tới mọi điện thoại của người nhận; tin nhắn cùng một kèo thay nhau trên thanh thông báo; bấm thông báo mở đúng màn hình;
+đăng xuất → `POST /api/devices/unregister`.
+

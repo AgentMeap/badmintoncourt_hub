@@ -64,6 +64,9 @@ app:
   gemini:
     api-key: ${GEMINI_API_KEY:}
     model: ${GEMINI_MODEL:gemini-2.5-flash}
+  # Thông báo đẩy (Firebase Cloud Messaging): đường dẫn file JSON service account. Trống = tắt đẩy.
+  fcm:
+    credentials-file: ${FCM_CREDENTIALS_FILE:}
   # Tìm đường theo đường phố (A* trên bản đồ OpenStreetMap tự dựng ở backend).
   # Lần đầu chạy: tự tải đường phố TP.HCM qua Overpass API (~15-30 phút, chạy nền),
   # lưu ở data-dir/hcm-roads.graph; các lần sau chỉ đọc file (vài giây).

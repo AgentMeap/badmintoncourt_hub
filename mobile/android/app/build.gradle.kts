@@ -4,6 +4,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Chỉ bật khi có google-services.json (file bí mật, không có trên GitHub) để máy khác vẫn build được
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.badminton.badminton_v2_mobile"
     compileSdk = flutter.compileSdkVersion

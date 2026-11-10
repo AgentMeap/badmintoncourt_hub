@@ -30,6 +30,16 @@ public class NotificationController {
         ));
     }
 
+    /** Nhẹ, cho app hỏi định kỳ: {unreadCount, latestId}. latestId đổi = có thông báo mới. */
+    @GetMapping("/user/{userId}/unread-count")
+    public ResponseEntity<?> unreadCount(@PathVariable Long userId) {
+        CurrentUser.requireSelfOrAdmin(userId);
+        Map<String, Object> res = new java.util.LinkedHashMap<>();
+        res.put("unreadCount", notificationService.getUnreadCount(userId));
+        res.put("latestId", notificationService.latestId(userId));
+        return ResponseEntity.ok(res);
+    }
+
     @PatchMapping("/{id}/read")
     public ResponseEntity<?> markRead(@PathVariable Long id) {
         notificationService.find(id).ifPresent(n -> CurrentUser.requireSelfOrAdmin(n.getUserId()));

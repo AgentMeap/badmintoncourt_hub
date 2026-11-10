@@ -3,6 +3,7 @@ package com.badminton.v2.controller;
 import com.badminton.v2.entity.*;
 import com.badminton.v2.repository.*;
 import com.badminton.v2.service.HostReputationService;
+import com.badminton.v2.service.MatchChatService;
 import com.badminton.v2.service.MatchDepositService;
 import com.badminton.v2.service.NotificationService;
 import com.badminton.v2.security.AuthUser;
@@ -30,8 +31,11 @@ import java.util.*;
  *   <li>POST  /api/matches/{id}/participants/{pid}/remove  chủ kèo mời thành viên ra (kèm lý do)</li>
  *   <li>POST  /api/matches/{id}/cancel          chủ kèo hủy kèo, báo cho mọi người đã xin / đã vào</li>
  *   <li>GET   /api/matches/{id}/messages?afterId=  nhóm chat của kèo (chủ kèo + thành viên đã duyệt)</li>
- *   <li>POST  /api/matches/{id}/messages        gửi tin nhắn vào nhóm chat</li>
- *   <li>GET   /api/matches/{id}/leave-preview   số tiền cọc được hoàn nếu hủy đơn / rời kèo ngay bây giờ</li>
+ *   <li>POST  /api/matches/{id}/messages        gửi tin nhắn vào nhóm chat (báo cho thành viên khác, gộp 1 thông báo / kèo)</li>
+ *   <li>PATCH /api/matches/{id}/chat-settings   {muted} tắt / bật thông báo nhóm chat</li>
+ *   <li>GET   /api/matches/{id}/leave-preview   số tiền cọc được hoàn nếu hủy đơn / tự rời kèo ngay bây giờ</li>
+ *   <li>POST  /api/matches/{id}/leave           hủy đơn chờ duyệt (hoàn đủ) hoặc thành viên đã duyệt tự rời (hoàn theo mốc 24h / 2h)</li>
+ *   <li>GET   /api/matches/{id}/participants/{pid}/remove-preview  số tiền hoàn nếu mời ra (hoàn đủ / theo chính sách)</li>
  *   <li>POST  /api/matches/{id}/host-review     thành viên đánh giá chủ kèo (sau khi kèo kết thúc, trong 7 ngày)</li>
  *   <li>GET   /api/matches/hosts/{hostId}/profile  uy tín chủ kèo + đánh giá gần đây</li>
  * </ul>
@@ -56,6 +60,7 @@ public class MatchmakingController {
     private final MatchMessageRepository matchMessageRepository;
     private final MatchDepositService depositService;
     private final HostReputationService reputationService;
+    private final MatchChatService chatService;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public MatchmakingController(MatchPostRepository matchPostRepository,
@@ -66,7 +71,8 @@ public class MatchmakingController {
                                  ObjectMapper objectMapper,
                                  MatchMessageRepository matchMessageRepository,
                                  MatchDepositService depositService,
-                                 HostReputationService reputationService) {
+                                 HostReputationService reputationService,
+                                 MatchChatService chatService) {
         this.matchPostRepository = matchPostRepository;
         this.matchParticipantRepository = matchParticipantRepository;
         this.venueRepository = venueRepository;
@@ -76,6 +82,7 @@ public class MatchmakingController {
         this.matchMessageRepository = matchMessageRepository;
         this.depositService = depositService;
         this.reputationService = reputationService;
+        this.chatService = chatService;
     }
 
     /** Người đang xem (null nếu chưa đăng nhập). */
@@ -128,9 +135,16 @@ public class MatchmakingController {
         item.put("pendingCount", pending);
         item.put("isHost", viewerIsHost);
         item.put("myStatus", viewerIsHost ? "HOST" : myStatus);
-        item.put("canChat", viewerIsHost || "APPROVED".equals(myStatus));
+        boolean chatAllowed = viewerIsHost || "APPROVED".equals(myStatus);
+        item.put("canChat", chatAllowed);
+        if (chatAllowed && viewer != null) {
+            item.put("unreadMessages", chatService.unread(p.getId(), viewer));
+            item.put("chatMuted", chatService.muted(p.getId(), viewer));
+        }
         item.put("messageCount", matchMessageRepository.countByMatchId(p.getId()));
-        if (viewerIsHost) item.put("depositHeldTotal", depositService.heldTotal(p));
+        if (viewerIsHost) {
+            item.put("depositHeldTotal", depositService.heldTotal(p));
+        }
         item.put("host", hostSummary);
         if ("COMPLETED".equals(p.getStatus()) && viewer != null && !viewerIsHost) {
             item.put("canReviewHost", reputationService.reviewBlockReason(p, viewer, LocalDateTime.now()) == null);
@@ -420,26 +434,31 @@ public class MatchmakingController {
         if (!"PENDING".equals(status) && !"APPROVED".equals(status)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Đơn này đã được xử lý, không thể hủy."));
         }
-        if ("APPROVED".equals(status) && started(post)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Kèo đã bắt đầu, không thể rời kèo."));
-        }
-        double refunded = "APPROVED".equals(status)
-                ? depositService.settleLeave(mp, post, LocalDateTime.now())
-                : depositService.refundFull(mp, post, "tự hủy đơn");
-        matchParticipantRepository.delete(mp);
-
         if ("APPROVED".equals(status)) {
+            // Thành viên đã duyệt tự rời: hoàn cọc theo mốc giờ lúc rời (24h / 2h)
+            if (started(post)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Kèo đã bắt đầu, không thể rời kèo."));
+            }
+            double ratio = MatchDepositService.refundRatio(post, LocalDateTime.now());
+            double refunded = depositService.settleWithRatio(mp, post, ratio, "tự rời kèo");
+            matchParticipantRepository.delete(mp);
             freeSlot(post);
             notificationService.notifyUser(
                     post.getHostId(),
                     "Thành viên đã rời kèo",
-                    mp.getUserName() + " đã rời kèo '" + post.getTitle() + "'. Kèo còn "
+                    mp.getUserName() + " đã tự rời kèo '" + post.getTitle() + "'. Kèo còn "
                             + (post.getMaxPlayers() - post.getCurrentPlayers()) + " chỗ trống.",
                     "MATCHMAKING",
                     "S30",
-                    post.getId()
-            );
+                    post.getId());
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("left", status);
+            res.put("refundedAmount", refunded);
+            res.put("entry", entryOf(post, me));
+            return ResponseEntity.ok(res);
         }
+        double refunded = depositService.refundFull(mp, post, "tự hủy đơn");
+        matchParticipantRepository.delete(mp);
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("left", status);
         res.put("refundedAmount", refunded);
@@ -457,6 +476,38 @@ public class MatchmakingController {
         MatchParticipant mp = matchParticipantRepository.findByMatchIdAndUserId(matchId, me).orElse(null);
         if (mp == null) return ResponseEntity.badRequest().body(Map.of("error", "Bạn chưa xin tham gia kèo này."));
         return ResponseEntity.ok(depositService.leavePreview(mp, post, LocalDateTime.now()));
+    }
+
+    /** Thành viên đã duyệt của kèo do người đang đăng nhập làm chủ (hoặc lỗi). */
+    private Object hostTarget(Long matchId, Long participantId) {
+        MatchPost post = matchPostRepository.findById(matchId).orElse(null);
+        if (post == null) return ResponseEntity.status(404).body(Map.of("error", "Kèo này không còn tồn tại."));
+        CurrentUser.requireSelfOrAdmin(post.getHostId());
+        MatchParticipant mp = matchParticipantRepository.findById(participantId).orElse(null);
+        if (mp == null || !matchId.equals(mp.getMatchId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Người tham gia không thuộc kèo này."));
+        }
+        if (!"APPROVED".equals(mp.getStatus())) {
+            return ResponseEntity.status(409).body(Map.of("error", "Thành viên này không còn trong kèo."));
+        }
+        if (closed(post) || started(post)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Kèo đã bắt đầu hoặc đã đóng."));
+        }
+        return new Object[]{post, mp};
+    }
+
+    /** Số tiền hoàn nếu chủ kèo mời thành viên ra: {deposit, fullRefund, policyRefund (theo mốc 24h / 2h lúc này)}. */
+    @GetMapping("/{matchId}/participants/{participantId}/remove-preview")
+    public ResponseEntity<?> removePreview(@PathVariable Long matchId, @PathVariable Long participantId) {
+        Object t = hostTarget(matchId, participantId);
+        if (t instanceof ResponseEntity<?> err) return err;
+        MatchPost post = (MatchPost) ((Object[]) t)[0];
+        MatchParticipant mp = (MatchParticipant) ((Object[]) t)[1];
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("deposit", MatchDepositService.heldAmount(mp));
+        res.put("fullRefund", MatchDepositService.heldAmount(mp));
+        res.put("policyRefund", MatchDepositService.refundFor(mp, MatchDepositService.refundRatio(post, LocalDateTime.now())));
+        return ResponseEntity.ok(res);
     }
 
     /** Chủ kèo mời một thành viên đã duyệt ra khỏi kèo (trả lại chỗ, người đó không xin lại được). */
@@ -479,10 +530,14 @@ public class MatchmakingController {
             return ResponseEntity.badRequest().body(Map.of("error", "Kèo đã bắt đầu hoặc đã đóng, không thể mời ra."));
         }
         String reason = cleanReason(body == null ? null : body.get("reason"));
+        boolean policy = "POLICY".equalsIgnoreCase(String.valueOf(body == null ? "" : body.get("refundMode")));
         mp.setStatus("REMOVED");
         mp.setRejectReason(reason);
+        double ratio = policy ? MatchDepositService.refundRatio(post, LocalDateTime.now()) : 1.0;
         matchParticipantRepository.save(mp);
-        double refunded = depositService.refundFull(mp, post, "chủ kèo mời ra");
+        double refunded = policy
+                ? depositService.settleWithRatio(mp, post, ratio, "chủ kèo mời ra")
+                : depositService.refundFull(mp, post, "chủ kèo mời ra");
         freeSlot(post);
 
         notificationService.notifyUser(
@@ -576,7 +631,14 @@ public class MatchmakingController {
         }
         List<Map<String, Object>> items = new ArrayList<>();
         for (MatchMessage m : rows) items.add(messageOf(m, me));
-        return ResponseEntity.ok(Map.of("items", items, "closed", closed(post)));
+        long lastReadBefore = chatService.lastRead(matchId, me);
+        chatService.markSeen(post, me, LocalDateTime.now()); // đang mở chat = đã đọc, không báo tin mới
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("items", items);
+        res.put("closed", closed(post));
+        res.put("lastReadBefore", lastReadBefore);
+        res.put("muted", chatService.muted(matchId, me));
+        return ResponseEntity.ok(res);
     }
 
     @PostMapping("/{matchId}/messages")
@@ -603,7 +665,23 @@ public class MatchmakingController {
         m.setContent(content);
         m.setCreatedAt(LocalDateTime.now().format(FMT));
         m = matchMessageRepository.save(m);
+        chatService.onMessage(post, m, LocalDateTime.now());
         return ResponseEntity.ok(messageOf(m, me));
+    }
+
+    /** Tắt / bật thông báo nhóm chat của kèo {muted: true|false}. */
+    @PatchMapping("/{matchId}/chat-settings")
+    public ResponseEntity<?> chatSettings(@PathVariable Long matchId, @RequestBody Map<String, Object> body) {
+        Long me = viewerId();
+        if (me == null) return ResponseEntity.status(401).body(Map.of("error", "Vui lòng đăng nhập."));
+        MatchPost post = matchPostRepository.findById(matchId).orElse(null);
+        if (post == null) return ResponseEntity.status(404).body(Map.of("error", "Kèo này không còn tồn tại."));
+        if (!canChat(post, me)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Chỉ chủ kèo và thành viên đã duyệt mới dùng được nhóm chat."));
+        }
+        boolean muted = Boolean.parseBoolean(String.valueOf(body.getOrDefault("muted", false)));
+        chatService.setMuted(matchId, me, muted);
+        return ResponseEntity.ok(Map.of("muted", muted));
     }
 
     /** Thành viên đã duyệt đánh giá chủ kèo: {rating 1-5, skillAccuracy ACCURATE|HIGHER|LOWER, tags[], comment}. */

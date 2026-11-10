@@ -32,4 +32,5 @@ class Repos {
   static final admin = AdminRepository();
   static final ai = AiRepository();
   static final route = RouteRepository();
+  static final device = DeviceRepository();
 }

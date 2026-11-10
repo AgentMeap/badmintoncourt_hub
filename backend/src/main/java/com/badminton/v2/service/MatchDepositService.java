@@ -22,7 +22,8 @@ import java.util.Map;
  * <ul>
  *   <li>Xin tham gia: trừ ví ngay, giữ hộ (HELD).</li>
  *   <li>Bị từ chối / tự hủy đơn / bị mời ra / chủ kèo hủy kèo: hoàn 100%.</li>
- *   <li>Thành viên đã duyệt rời kèo: còn ≥ 24h hoàn 100%; 2–24h hoàn 50% (50% cho chủ kèo); &lt; 2h mất cọc.</li>
+ *   <li>Thành viên đã duyệt tự rời kèo: còn ≥ 24h hoàn 100%; 2–24h hoàn 50% (50% cho chủ kèo); &lt; 2h mất cọc.</li>
+ *   <li>Chủ kèo mời ra: chọn hoàn đủ (mặc định) hoặc theo mốc 24h / 2h như trên.</li>
  *   <li>Kèo kết thúc: cọc của thành viên đã duyệt chuyển cho chủ kèo; đơn còn chờ duyệt được hoàn.</li>
  * </ul>
  * Mỗi khoản chỉ được xử lý khi đang HELD, nên gọi lại (VD tác vụ nền chạy 2 lần) không chuyển tiền 2 lần.
@@ -140,21 +141,36 @@ public class MatchDepositService {
         r.put("forfeitAmount", held(mp) ? amount - refund : 0);
         r.put("rule", !held(mp) ? "Kèo không cọc."
                 : !"APPROVED".equals(mp.getStatus()) ? "Đơn chưa được duyệt: hoàn đủ cọc."
-                : ratio >= 1 ? "Còn từ 24 giờ trở lên: hoàn đủ cọc."
-                : ratio > 0 ? "Còn 2–24 giờ: hoàn 50%, 50% còn lại chuyển cho chủ kèo."
-                : "Còn dưới 2 giờ: không hoàn cọc, tiền cọc chuyển cho chủ kèo.");
+                : ratio >= 1 ? "Rời kèo lúc này (còn từ 24 giờ trở lên): hoàn đủ cọc."
+                : ratio > 0 ? "Rời kèo lúc này (còn 2–24 giờ): hoàn 50%, 50% còn lại chuyển cho chủ kèo."
+                : "Rời kèo lúc này (còn dưới 2 giờ): không hoàn cọc, tiền cọc chuyển cho chủ kèo.");
         return r;
     }
 
-    /** Thành viên đã duyệt rời kèo: hoàn theo mốc giờ, phần còn lại trả chủ kèo. Trả về số tiền đã hoàn. */
+    /** Số tiền hoàn ứng với tỉ lệ [ratio] (làm tròn 1.000đ, không vượt số cọc). */
+    public static double refundFor(MatchParticipant mp, double ratio) {
+        double amount = amountOf(mp);
+        double refund = Math.round(amount * Math.max(0, Math.min(1, ratio)) / 1000.0) * 1000.0;
+        return Math.min(refund, amount);
+    }
+
+    /** Cọc đang giữ hộ của thành viên (0 nếu không cọc / đã xử lý). */
+    public static double heldAmount(MatchParticipant mp) {
+        return held(mp) ? amountOf(mp) : 0;
+    }
+
+    /**
+     * Cho thành viên đã duyệt ra khỏi kèo với tỉ lệ hoàn [ratio]: hoàn phần của người chơi, phần còn lại trả chủ kèo.
+     * Trả về số tiền đã hoàn.
+     */
     @Transactional
-    public double settleLeave(MatchParticipant mp, MatchPost post, LocalDateTime now) {
+    public double settleWithRatio(MatchParticipant mp, MatchPost post, double ratio, String why) {
         if (!held(mp)) return 0;
         double amount = amountOf(mp);
-        double refund = ((Number) leavePreview(mp, post, now).get("refundAmount")).doubleValue();
+        double refund = refundFor(mp, ratio);
         double forfeit = amount - refund;
         if (refund > 0) {
-            move(mp.getUserId(), refund, REFUND, "Hoàn cọc kèo '" + post.getTitle() + "' (rời kèo)");
+            move(mp.getUserId(), refund, REFUND, "Hoàn cọc kèo '" + post.getTitle() + "' (" + why + ")");
         }
         if (forfeit > 0) {
             move(post.getHostId(), forfeit, PAYOUT, "Nhận cọc của " + mp.getUserName() + " (rời kèo sát giờ) – kèo '" + post.getTitle() + "'");

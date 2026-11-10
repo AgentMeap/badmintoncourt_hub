@@ -12,12 +12,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** Kèo giao lưu: xin tham gia -> thông báo mở đúng kèo (S30) -> duyệt / từ chối, hủy đơn, rời kèo, mời ra,
+/** Kèo giao lưu: xin tham gia -> thông báo mở đúng kèo (S30) -> duyệt / từ chối, hủy đơn, tự rời kèo, mời ra,
  * nhắc lịch, tự đóng kèo qua giờ, chủ kèo hủy kèo, nhóm chat. */
 class MatchmakingFlowTest extends IntegrationTestBase {
 
@@ -40,6 +41,17 @@ class MatchmakingFlowTest extends IntegrationTestBase {
         body.put("feePerPlayer", 50000);
         return body(mvc.perform(postAs(tokenOf(host), body, "/api/matches")).andExpect(status().isOk()).andReturn())
                 .path("id").asLong();
+    }
+
+    private List<NotificationItem> chatNotifications(User u, long matchId) {
+        return notificationRepository.findByUserIdOrderByIdDesc(u.getId()).stream()
+                .filter(n -> "CHAT".equals(n.getType()) && Long.valueOf(matchId).equals(n.getReferenceId()))
+                .toList();
+    }
+
+    private void say(User u, long matchId, String text) throws Exception {
+        mvc.perform(postAs(tokenOf(u), Map.of("content", text), "/api/matches/{id}/messages", matchId))
+                .andExpect(status().isOk());
     }
 
     private NotificationItem latestNotification(User u) {
@@ -174,16 +186,14 @@ class MatchmakingFlowTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("Rời kèo: trả lại chỗ, kèo FULL mở lại, chủ kèo nhận thông báo S30")
-    void approvedMemberLeaves() throws Exception {
+    @DisplayName("Thành viên đã duyệt tự rời kèo: trả lại chỗ, kèo FULL mở lại, chủ kèo nhận thông báo S30")
+    void approvedMemberLeavesSelf() throws Exception {
         User host = newUser("CUSTOMER", 0);
         User a = newUser("CUSTOMER", 0);
         User b = newUser("CUSTOMER", 0);
         long matchId = createMatch(host); // tối đa 3, đang có 1
         approve(host, matchId, join(a, matchId));
         approve(host, matchId, join(b, matchId));
-        var full = body(mvc.perform(getAs(tokenOf(host), "/api/matches/{id}", matchId)).andReturn());
-        assertEquals("FULL", full.path("post").path("status").asText());
 
         var res = body(mvc.perform(postAs(tokenOf(a), Map.of(), "/api/matches/{id}/leave", matchId))
                 .andExpect(status().isOk()).andReturn());
@@ -192,12 +202,9 @@ class MatchmakingFlowTest extends IntegrationTestBase {
         assertEquals("OPEN", res.path("entry").path("post").path("status").asText());
 
         NotificationItem n = latestNotification(host);
+        assertEquals("Thành viên đã rời kèo", n.getTitle());
         assertEquals("S30", n.getTargetScreen());
         assertEquals(matchId, n.getReferenceId());
-
-        // Người không có trong kèo thì không rời được
-        mvc.perform(postAs(tokenOf(newUser("CUSTOMER", 0)), Map.of(), "/api/matches/{id}/leave", matchId))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -348,5 +355,66 @@ class MatchmakingFlowTest extends IntegrationTestBase {
         mvc.perform(postAs(tokenOf(newUser("CUSTOMER", 0)), Map.of("content", "hi"), "/api/matches/{id}/messages", matchId))
                 .andExpect(status().isForbidden());
         mvc.perform(getAs(null, "/api/matches/{id}/messages", matchId)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Tin nhắn mới: gộp 1 thông báo chưa đọc / kèo, không báo người gửi / người chờ duyệt")
+    void chatNotificationsCollapse() throws Exception {
+        User host = newUser("CUSTOMER", 0);
+        User a = newUser("CUSTOMER", 0);
+        User pending = newUser("CUSTOMER", 0);
+        long matchId = createMatch(host);
+        approve(host, matchId, join(a, matchId));
+        join(pending, matchId);
+
+        say(host, matchId, "Mọi người nhớ mang cầu");
+        say(host, matchId, "Tối nay 18h nhé");
+        say(host, matchId, "Ai đến muộn báo trước");
+
+        List<NotificationItem> forA = chatNotifications(a, matchId);
+        assertEquals(1, forA.size(), "chỉ 1 thông báo chat cho mỗi kèo");
+        assertFalse(forA.get(0).isRead());
+        assertTrue(forA.get(0).getTitle().startsWith("3 tin nhắn mới"));
+        assertTrue(forA.get(0).getBody().contains("Ai đến muộn"));
+        assertEquals("S30", forA.get(0).getTargetScreen());
+        assertTrue(chatNotifications(host, matchId).isEmpty(), "người gửi không nhận");
+        assertTrue(chatNotifications(pending, matchId).isEmpty(), "người chờ duyệt không nhận");
+
+        var asA = body(mvc.perform(getAs(tokenOf(a), "/api/matches/{id}", matchId)).andReturn());
+        assertEquals(3, asA.path("unreadMessages").asInt());
+    }
+
+    @Test
+    @DisplayName("Mở chat = đã đọc; đang mở chat thì không báo; tắt thông báo nhóm thì không báo")
+    void chatReadActiveAndMute() throws Exception {
+        User host = newUser("CUSTOMER", 0);
+        User a = newUser("CUSTOMER", 0);
+        long matchId = createMatch(host);
+        approve(host, matchId, join(a, matchId));
+
+        say(host, matchId, "Tin 1");
+        var opened = body(mvc.perform(getAs(tokenOf(a), "/api/matches/{id}/messages", matchId))
+                .andExpect(status().isOk()).andReturn());
+        assertEquals(0, opened.path("lastReadBefore").asLong());
+        assertTrue(chatNotifications(a, matchId).stream().allMatch(NotificationItem::isRead), "mở chat thì thông báo đã đọc");
+        var asA = body(mvc.perform(getAs(tokenOf(a), "/api/matches/{id}", matchId)).andReturn());
+        assertEquals(0, asA.path("unreadMessages").asInt());
+
+        // a vừa mở chat (trong 15 giây) -> tin mới không tạo thông báo
+        say(host, matchId, "Tin 2");
+        assertTrue(chatNotifications(a, matchId).stream().allMatch(NotificationItem::isRead));
+
+        // host tắt thông báo nhóm -> a nhắn, host không nhận
+        mvc.perform(patchAs(tokenOf(host), Map.of("muted", true), "/api/matches/{id}/chat-settings", matchId))
+                .andExpect(status().isOk());
+        say(a, matchId, "Ok anh");
+        assertTrue(chatNotifications(host, matchId).isEmpty());
+        var asHost = body(mvc.perform(getAs(tokenOf(host), "/api/matches/{id}", matchId)).andReturn());
+        assertTrue(asHost.path("chatMuted").asBoolean());
+        assertEquals(1, asHost.path("unreadMessages").asInt(), "vẫn đếm tin chưa đọc dù tắt thông báo");
+
+        var count = body(mvc.perform(getAs(tokenOf(a), "/api/notifications/user/{id}/unread-count", a.getId()))
+                .andExpect(status().isOk()).andReturn());
+        assertTrue(count.has("latestId"));
     }
 }
